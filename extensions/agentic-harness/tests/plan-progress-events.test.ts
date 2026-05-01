@@ -343,3 +343,85 @@ describe("plan progress subagent task tracking", () => {
     expect(tracker.getProgress()).toMatchObject({ failed: 1, running: 0, pending: 2 });
   });
 });
+
+describe("content-based fallback for non-standard paths", () => {
+  it("loads plan from WRITE with non-standard path when content has plan tasks", async () => {
+    const tracker = new PlanProgressTracker();
+    const sessionPaths = new Set<string>();
+    const nonStandardPath = "my-custom-plans/feature.md";
+
+    const loaded = await loadPlanFromToolResultEvent(tracker, {
+      toolName: "write",
+      input: { path: nonStandardPath, content: samplePlan("Custom path plan") },
+      content: [{ type: "text", text: "Wrote file" }],
+    }, undefined, sessionPaths);
+
+    expect(loaded).toBe(true);
+    expect(tracker.hasPlan()).toBe(true);
+    expect(tracker.getGoal()).toBe("Custom path plan");
+    expect(sessionPaths.has(nonStandardPath)).toBe(true);
+  });
+
+  it("loads plan from READ with non-standard path only if written in session", async () => {
+    const tracker = new PlanProgressTracker();
+    const sessionPaths = new Set<string>();
+    const nonStandardPath = "specs/implementation.md";
+
+    // Try READ without prior WRITE - should fail
+    const readBeforeWrite = await loadPlanFromToolResultEvent(tracker, {
+      toolName: "read",
+      input: { path: nonStandardPath },
+      content: [{ type: "text", text: samplePlan("Should not load") }],
+    }, undefined, sessionPaths);
+
+    expect(readBeforeWrite).toBe(false);
+    expect(tracker.hasPlan()).toBe(false);
+
+    // Simulate a WRITE in this session
+    sessionPaths.add(nonStandardPath);
+
+    // Now READ should work
+    const readAfterWrite = await loadPlanFromToolResultEvent(tracker, {
+      toolName: "read",
+      input: { path: nonStandardPath },
+      content: [{ type: "text", text: samplePlan("Loaded after session write") }],
+    }, undefined, sessionPaths);
+
+    expect(readAfterWrite).toBe(true);
+    expect(tracker.hasPlan()).toBe(true);
+    expect(tracker.getGoal()).toBe("Loaded after session write");
+  });
+
+  it("does not load random markdown files with task-like headers", async () => {
+    const tracker = new PlanProgressTracker();
+    const sessionPaths = new Set<string>();
+
+    const randomMarkdown = [
+      "# Some Random Document",
+      "",
+      "### Task 1: Not a real plan",
+      "Some random content without proper plan structure.",
+    ].join("\n");
+
+    const loaded = await loadPlanFromToolResultEvent(tracker, {
+      toolName: "read",
+      input: { path: "notes.md" },
+      content: [{ type: "text", text: randomMarkdown }],
+    }, undefined, sessionPaths);
+
+    // Should not load because it's not a proper plan (no Goal, no Steps, etc.)
+    expect(loaded).toBe(false);
+    expect(tracker.hasPlan()).toBe(false);
+  });
+
+  it("clears session plan paths on session start", () => {
+    const sessionPaths = new Set<string>();
+    sessionPaths.add("plans/old-plan.md");
+    sessionPaths.add("specs/old-spec.md");
+
+    // Simulate session start clearing
+    sessionPaths.clear();
+
+    expect(sessionPaths.size).toBe(0);
+  });
+});

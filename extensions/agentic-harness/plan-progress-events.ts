@@ -130,17 +130,43 @@ export async function loadPlanFromToolResultEvent(
   tracker: PlanProgressTracker,
   event: PlanToolResultEvent,
   cwd?: string,
+  sessionPlanPaths?: Set<string>,
 ): Promise<boolean> {
   if (event.toolName !== "read" && event.toolName !== "write") return false;
 
   const filePath = event.input?.path;
-  if (typeof filePath !== "string" || !isPlanMarkdownPath(filePath)) return false;
+  if (typeof filePath !== "string") return false;
 
-  const text = event.toolName === "write"
-    ? (typeof event.input?.content === "string" ? event.input.content : undefined)
-    : extractToolResultText(event.content);
+  const isKnownPath = isPlanMarkdownPath(filePath);
 
-  return loadPlanFromTextOrFile(tracker, { text, path: filePath, cwd });
+  // Fast path: known plan path patterns match
+  if (isKnownPath) {
+    const text = event.toolName === "write"
+      ? (typeof event.input?.content === "string" ? event.input.content : undefined)
+      : extractToolResultText(event.content);
+    return loadPlanFromTextOrFile(tracker, { text, path: filePath, cwd });
+  }
+
+  // Content-based fallback: check if this file contains plan tasks
+  // For WRITE: always accept (we're creating a plan in this session)
+  // For READ: only accept if this file was previously written as a plan in this session
+  if (event.toolName === "write") {
+    const text = typeof event.input?.content === "string" ? event.input.content : undefined;
+    if (text && hasPlanTasks(text)) {
+      sessionPlanPaths?.add(filePath);
+      tracker.loadPlan(text);
+      return true;
+    }
+    return false;
+  }
+
+  // READ with non-standard path: only load if written in this session
+  if (sessionPlanPaths?.has(filePath)) {
+    const text = extractToolResultText(event.content);
+    return loadPlanFromTextOrFile(tracker, { text, path: filePath, cwd });
+  }
+
+  return false;
 }
 
 export async function reloadPlanFromSubagentArgs(

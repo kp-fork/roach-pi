@@ -58,6 +58,9 @@ const planProgress = new PlanProgressTracker();
 const toolCallArgsById = new Map<string, Record<string, unknown>>();
 const planTaskIdsByToolCallId = new Map<string, number[]>();
 
+// Track plan file paths written in this session (for content-based fallback detection)
+const sessionPlanPaths = new Set<string>();
+
 type StringEnumSchema<T extends string> = TUnsafe<T> & {
   type: "string";
   enum: T[];
@@ -832,6 +835,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", async (_event, _ctx) => {
+    sessionPlanPaths.clear();
     await cleanupActiveTeamTmuxResources();
   });
 
@@ -1089,7 +1093,7 @@ Do not start multi-step implementation without a clear understanding of what the
         toolName,
         input: event.input as Record<string, unknown> | undefined,
         content: event.content,
-      }, ctx.cwd);
+      }, ctx.cwd, sessionPlanPaths);
     }
 
     if (currentPhase === "idle") return;
@@ -1628,6 +1632,7 @@ Do not start multi-step implementation without a clear understanding of what the
     activeTools.running.clear();
     toolCallArgsById.clear();
     planTaskIdsByToolCallId.clear();
+    sessionPlanPaths.clear();
     planProgress.clear();
 
     ctx.ui.setHeader((_tui, theme) => {
