@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.18.2](https://github.com/tmdgusya/roach-pi/compare/v1.18.1...v1.18.2) (2026-05-01)
+
+### Bug Fixes
+
+* **agentic-harness:** preserve plan progress on idempotent reload ([1547fdc](https://github.com/tmdgusya/roach-pi/commit/1547fdc77ce3d4971e613b13c163e5502d057ad0))
+
 ## [1.18.1](https://github.com/tmdgusya/roach-pi/compare/v1.18.0...v1.18.1) (2026-05-01)
 
 ### Bug Fixes
