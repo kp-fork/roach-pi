@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.18.0](https://github.com/tmdgusya/roach-pi/compare/v1.17.0...v1.18.0) (2026-05-01)
+
+### Features
+
+* add pi-nested-agents-md and pi-lsp-client extensions ([a428b62](https://github.com/tmdgusya/roach-pi/commit/a428b6269ae03ee55f03944355184c59b433d85d))
+
 ## [1.17.0](https://github.com/tmdgusya/roach-pi/compare/v1.16.0...v1.17.0) (2026-05-01)
 
 ### Features
