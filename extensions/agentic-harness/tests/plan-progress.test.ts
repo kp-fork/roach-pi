@@ -151,7 +151,7 @@ describe("PlanProgressTracker lifecycle", () => {
     });
   });
 
-  it("guards against restarting running, completed, or failed tasks until loadPlan resets them", () => {
+  it("guards against restarting running, completed, or failed tasks until a structurally different plan is loaded", () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000);
     const tracker = loadSamplePlan();
@@ -178,12 +178,59 @@ describe("PlanProgressTracker lifecycle", () => {
     expect(taskOf(tracker, 2).status).toBe("failed");
     expect(taskOf(tracker, 2).startedAt).toBe(failedStartedAt);
 
+    // A plan with a different task structure triggers a full reset.
+    tracker.loadPlan(planMarkdown("Build a feature"));
+    expect(tasksOf(tracker).map((task) => task.status)).toEqual(["pending"]);
+  });
+
+  it("preserves task statuses when reloaded with the same task structure", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    const tracker = loadSamplePlan();
+
+    tracker.startTask(1);
+    tracker.completeTask(1, true);
+    tracker.startTask(2);
+    const startedAt2 = taskOf(tracker, 2).startedAt;
+
+    vi.setSystemTime(2_000);
     tracker.loadPlan(SAMPLE_PLAN);
+
     expect(tasksOf(tracker).map((task) => task.status)).toEqual([
-      "pending",
-      "pending",
+      "completed",
+      "running",
       "pending",
     ]);
+    expect(taskOf(tracker, 2).startedAt).toBe(startedAt2);
+  });
+
+  it("refreshes goal text and notifies subscribers when only the goal changes on reload", () => {
+    const tracker = loadSamplePlan();
+    tracker.startTask(1);
+    const onChange = vi.fn();
+    tracker.setOnChange(onChange);
+
+    const sameStructureDifferentGoal = SAMPLE_PLAN.replace(
+      "Keep plan progress visible during execution",
+      "Updated goal text",
+    );
+    tracker.loadPlan(sameStructureDifferentGoal);
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(tracker.getGoal()).toBe("Updated goal text");
+    expect(taskOf(tracker, 1).status).toBe("running");
+  });
+
+  it("does not notify subscribers when reload changes nothing visible", () => {
+    const tracker = loadSamplePlan();
+    tracker.startTask(1);
+    const onChange = vi.fn();
+    tracker.setOnChange(onChange);
+
+    tracker.loadPlan(SAMPLE_PLAN);
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(taskOf(tracker, 1).status).toBe("running");
   });
 
   it("notifies subscribers when plan-visible state changes", () => {

@@ -82,8 +82,20 @@ export class PlanProgressTracker {
   private readonly SPINNER_INTERVAL_MS = PLAN_PROGRESS_SPINNER_MS;
 
   loadPlan(markdown: string): void {
-    this.plan = parsePlan(markdown);
-    this.tasks = this.plan.tasks.map((t) => ({
+    const next = parsePlan(markdown);
+    const sameStructure = !!this.plan
+      && this.plan.tasks.length === next.tasks.length
+      && this.plan.tasks.every((t, i) => t.id === next.tasks[i].id && t.name === next.tasks[i].name);
+
+    if (sameStructure) {
+      const goalChanged = this.plan!.goal !== next.goal;
+      this.plan = next;
+      if (goalChanged) this.notifyChanged();
+      return;
+    }
+
+    this.plan = next;
+    this.tasks = next.tasks.map((t) => ({
       ...t,
       status: "pending" as TaskStatus,
     }));
