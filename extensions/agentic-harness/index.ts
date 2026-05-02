@@ -21,6 +21,7 @@ import { PlanProgressTracker } from "./plan-progress.js";
 import {
   completePlanSubagentTasks,
   getToolExecutionArgs,
+  loadPlanFromAssistantMessageEnd,
   loadPlanFromToolResultEvent,
   reloadPlanFromSubagentArgs,
   startPlanSubagentTasks,
@@ -1580,7 +1581,7 @@ Do not start multi-step implementation without a clear understanding of what the
     },
   });
 
-  pi.on("message_end", async (event, _ctx) => {
+  pi.on("message_end", async (event, ctx) => {
     const msg = event.message;
     if (msg.role === "assistant") {
       const usage = msg.usage;
@@ -1589,6 +1590,8 @@ Do not start multi-step implementation without a clear understanding of what the
         cacheStats.totalCacheRead += usage.cacheRead;
       }
     }
+
+    await loadPlanFromAssistantMessageEnd(planProgress, event, ctx.cwd, sessionPlanPaths);
   });
 
   pi.on("tool_execution_start", async (event, ctx) => {

@@ -7,6 +7,7 @@ import {
   completePlanSubagentTasks,
   extractPlanPathsFromArgs,
   getToolExecutionArgs,
+  loadPlanFromAssistantMessageEnd,
   loadPlanFromToolResultEvent,
   reloadPlanFromSubagentArgs,
   startPlanSubagentTasks,
@@ -232,6 +233,54 @@ describe("plan progress event loading", () => {
       tasks: [{ task: "parallel", reads: [PLAN_PATH] }],
       chain: [{ task: `chain reads ${PLAN_PATH}` }],
     })).toEqual([PLAN_PATH]);
+  });
+
+  it("loads plan markdown from finalized assistant message text", async () => {
+    const tracker = new PlanProgressTracker();
+
+    const loaded = await loadPlanFromAssistantMessageEnd(tracker, {
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: samplePlan("Loaded from assistant message") }],
+      },
+    });
+
+    expect(loaded).toBe(true);
+    expect(tracker.hasPlan()).toBe(true);
+    expect(tracker.getGoal()).toBe("Loaded from assistant message");
+  });
+
+  it("does not clear an existing plan for non-plan assistant text", async () => {
+    const tracker = new PlanProgressTracker();
+    tracker.loadPlan(samplePlan("Existing assistant plan"));
+
+    const loaded = await loadPlanFromAssistantMessageEnd(tracker, {
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "Plan complete and saved." }],
+      },
+    });
+
+    expect(loaded).toBe(false);
+    expect(tracker.hasPlan()).toBe(true);
+    expect(tracker.getGoal()).toBe("Existing assistant plan");
+  });
+
+  it("loads a plan file path mentioned in finalized assistant text", async () => {
+    const markdown = samplePlan("Loaded from assistant path");
+    const { cwd, path } = await createTempPlan(markdown);
+    const tracker = new PlanProgressTracker();
+
+    const loaded = await loadPlanFromAssistantMessageEnd(tracker, {
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: `Plan complete and saved to ${path}.` }],
+      },
+    }, cwd);
+
+    expect(loaded).toBe(true);
+    expect(tracker.hasPlan()).toBe(true);
+    expect(tracker.getGoal()).toBe("Loaded from assistant path");
   });
 });
 

@@ -92,6 +92,53 @@ export function extractToolResultText(content: unknown): string | undefined {
   return typeof textContent?.text === "string" ? textContent.text : undefined;
 }
 
+function extractMessageText(message: unknown): string | undefined {
+  if (!message || typeof message !== "object") return undefined;
+  const content = (message as { content?: unknown }).content;
+
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return undefined;
+
+  const parts: string[] = [];
+  for (const item of content) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as { type?: unknown; text?: unknown };
+    if (record.type === "text" && typeof record.text === "string") {
+      parts.push(record.text);
+    }
+  }
+
+  return parts.length > 0 ? parts.join("\n") : undefined;
+}
+
+export async function loadPlanFromAssistantMessageEnd(
+  tracker: PlanProgressTracker,
+  event: unknown,
+  cwd?: string,
+  sessionPlanPaths?: Set<string>,
+): Promise<boolean> {
+  if (!event || typeof event !== "object") return false;
+  const message = (event as { message?: unknown }).message;
+  if (!message || typeof message !== "object") return false;
+  if ((message as { role?: unknown }).role !== "assistant") return false;
+
+  const text = extractMessageText(message);
+  if (!text) return false;
+
+  if (await loadPlanFromTextOrFile(tracker, { text, cwd })) {
+    return true;
+  }
+
+  for (const planPath of extractPlanPathsFromArgs({ task: text })) {
+    if (sessionPlanPaths) sessionPlanPaths.add(planPath);
+    if (await loadPlanFromTextOrFile(tracker, { path: planPath, cwd })) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function getToolExecutionArgs(
   event: unknown,
   storedArgs: Record<string, unknown> | undefined,
