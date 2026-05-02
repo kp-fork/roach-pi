@@ -18,6 +18,7 @@ import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-age
 import { complete } from "@mariozechner/pi-ai";
 import { isDisciplineAgent, augmentAgentWithKarpathy, getSlopCleanerTask } from "./discipline.js";
 import { PlanProgressTracker } from "./plan-progress.js";
+import { WorkingVisibilityController } from "./working-visibility.js";
 import {
   completePlanSubagentTasks,
   getToolExecutionArgs,
@@ -61,6 +62,7 @@ const planTaskIdsByToolCallId = new Map<string, number[]>();
 
 // Track plan file paths written in this session (for content-based fallback detection)
 const sessionPlanPaths = new Set<string>();
+let workingVisibility: WorkingVisibilityController | null = null;
 
 type StringEnumSchema<T extends string> = TUnsafe<T> & {
   type: "string";
@@ -836,6 +838,8 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", async (_event, _ctx) => {
+    workingVisibility?.restore();
+    workingVisibility = null;
     sessionPlanPaths.clear();
     await cleanupActiveTeamTmuxResources();
   });
@@ -1637,6 +1641,12 @@ Do not start multi-step implementation without a clear understanding of what the
     planTaskIdsByToolCallId.clear();
     sessionPlanPaths.clear();
     planProgress.clear();
+    workingVisibility?.restore();
+    workingVisibility = new WorkingVisibilityController(
+      planProgress,
+      ctx.ui as { setWorkingVisible?: (visible: boolean) => void },
+    );
+    workingVisibility.start();
 
     ctx.ui.setHeader((_tui, theme) => {
       const banner = [
