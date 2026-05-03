@@ -4,6 +4,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import workspaceMemoryExtension from "../index.js";
 import { invalidateCache } from "../storage.js";
+import { MAX_RECALL_CONTEXT_CHARS } from "../recall.js";
 
 vi.mock("@mariozechner/pi-coding-agent", () => ({
 	getAgentDir: vi.fn(),
@@ -92,5 +93,49 @@ describe("workspace-memory integration flow", () => {
 		expect(beforeResult?.systemPrompt).toContain("BASE");
 		expect(beforeResult?.systemPrompt).toContain("## Workspace Memories");
 		expect(beforeResult?.systemPrompt).toContain("<workspace_memories>");
+	});
+
+	it("caps recalled memory context before injecting it into the system prompt", async () => {
+		const root = createTempRoot();
+		mockedGetAgentDir.mockReturnValue(root);
+
+		const cwd = "/tmp/workspace-memory-integration-cap";
+		invalidateCache(cwd);
+
+		const ctx: any = {
+			cwd,
+			hasUI: true,
+			ui: {
+				setStatus: vi.fn(),
+				notify: vi.fn(),
+			},
+		};
+
+		const { mockPi, tools, events } = createMockPi();
+		workspaceMemoryExtension(mockPi);
+
+		await tools.get("memory_save").execute(
+			"call-1",
+			{
+				content: `Summary: parser ${"x".repeat(MAX_RECALL_CONTEXT_CHARS * 2)}`,
+				template: "compact-note",
+				tags: ["parser"],
+			},
+			undefined,
+			undefined,
+			ctx
+		);
+
+		const beforeResult = await events
+			.get("before_agent_start")?.[0]?.(
+				{ type: "before_agent_start", prompt: "parser memory recall", systemPrompt: "BASE" },
+				ctx
+			);
+
+		expect(beforeResult?.systemPrompt).toContain("BASE");
+		expect(beforeResult?.systemPrompt).toContain("## Workspace Memories");
+		expect(beforeResult?.systemPrompt.length).toBeLessThanOrEqual(
+			"BASE\n\n".length + MAX_RECALL_CONTEXT_CHARS
+		);
 	});
 });
