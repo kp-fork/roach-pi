@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.21.1](https://github.com/tmdgusya/roach-pi/compare/v1.21.0...v1.21.1) (2026-05-03)
+
+### Bug Fixes
+
+* **harness:** detect worker source changes for slop cleanup ([40376af](https://github.com/tmdgusya/roach-pi/commit/40376afcbc816e43dcaba19d7815587c70a48a32))
+* **harness:** restore powerline footer styling ([bac09fd](https://github.com/tmdgusya/roach-pi/commit/bac09fdb234196f677a8cf4c86e70f191de689a1))
+
 ## [1.21.0](https://github.com/tmdgusya/roach-pi/compare/v1.20.1...v1.21.0) (2026-05-03)
 
 ### Features
