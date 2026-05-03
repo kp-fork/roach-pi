@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.19.0](https://github.com/tmdgusya/roach-pi/compare/v1.18.2...v1.19.0) (2026-05-03)
+
+### Features
+
+* hide built-in working row during plan progress ([23c5ead](https://github.com/tmdgusya/roach-pi/commit/23c5ead364eae23808a9a4eafedeebfbed445e36))
+* load plan progress from finalized assistant messages ([9a76136](https://github.com/tmdgusya/roach-pi/commit/9a76136bcfad04a4594a9613822448e4d9fa0afe))
+* reconstruct plan progress from session entries ([1333eb0](https://github.com/tmdgusya/roach-pi/commit/1333eb09ca64a738b69960391e5419f12c83ae48))
+
+### Bug Fixes
+
+* complete mixed plan validation chains ([1627363](https://github.com/tmdgusya/roach-pi/commit/1627363a908d6c70672fcb89275efbd3f894b960))
+* rebuild plan progress on session start ([e0f8d81](https://github.com/tmdgusya/roach-pi/commit/e0f8d810487532417a7651b8a3674937420218a8))
+
+### Documentation
+
+* add pi v0.72 adoption plan ([04bfd33](https://github.com/tmdgusya/roach-pi/commit/04bfd33961d34cec7213b143042e0e3947a85a68))
+* add plan progress session replay plan ([bb81e95](https://github.com/tmdgusya/roach-pi/commit/bb81e95b9f2b50cf1288436952b4fa69a68104ce))
+* capture pi v0.72 compatibility boundaries ([3fa2f2c](https://github.com/tmdgusya/roach-pi/commit/3fa2f2cdb4bbf85baa3810b552913f20a8a8e1a5))
+
+### Miscellaneous
+
+* pin pi extension dependencies to v0.72 ([5cd1adf](https://github.com/tmdgusya/roach-pi/commit/5cd1adf835d6275c4141ad587112b2b845697a3b))
+* refresh root pi lockfile to v0.72 ([2b8a2a9](https://github.com/tmdgusya/roach-pi/commit/2b8a2a9745e1ad8b1aacd531de0edb4e723de1e7))
+
 ## [1.18.2](https://github.com/tmdgusya/roach-pi/compare/v1.18.1...v1.18.2) (2026-05-01)
 
 ### Bug Fixes
