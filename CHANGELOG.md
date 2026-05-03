@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.20.1](https://github.com/tmdgusya/roach-pi/compare/v1.20.0...v1.20.1) (2026-05-03)
+
+### Bug Fixes
+
+* **fff-search:** upgrade @ff-labs/fff-node from 0.5.2 to 0.6.4 ([19a6d7e](https://github.com/tmdgusya/roach-pi/commit/19a6d7ecbb2dcb4973da62a2c232d5610eb56039))
+
+### Documentation
+
+* add plan progress robustness review ([b016a30](https://github.com/tmdgusya/roach-pi/commit/b016a30991cd8b5e83f921b7f110334a6d0abcc5))
+
+### Miscellaneous
+
+* bump @ff-labs/fff-node to ^0.6.4 and version up ([0e621b4](https://github.com/tmdgusya/roach-pi/commit/0e621b482423080c76d72d89ffa48bd7da6aa91b))
+
 ## [1.20.0](https://github.com/tmdgusya/roach-pi/compare/v1.19.0...v1.20.0) (2026-05-03)
 
 ### Features
