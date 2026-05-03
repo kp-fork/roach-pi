@@ -1,13 +1,30 @@
 import { describe, expect, it } from "vitest";
 import { visibleWidth } from "@mariozechner/pi-tui";
 import type { ReadonlyFooterDataProvider } from "@mariozechner/pi-coding-agent";
-import { RoachFooter, setUseNerdIcons } from "../footer.js";
+import { ICONS, RoachFooter, setUseNerdIcons } from "../footer.js";
 
 setUseNerdIcons(false);
 
 const stubTheme = {
   fg: (_color: string, text: string) => text,
   bold: (text: string) => text,
+  getFgAnsi: (_color: string) => "",
+} as any;
+
+const ansiTheme = {
+  fg: (color: string, text: string) => `${ansiTheme.getFgAnsi(color)}${text}\x1b[39m`,
+  bold: (text: string) => text,
+  getFgAnsi: (color: string) => {
+    const codes: Record<string, number> = {
+      accent: 33,
+      success: 34,
+      warning: 35,
+      error: 196,
+      dim: 238,
+      text: 15,
+    };
+    return `\x1b[38;5;${codes[color] ?? 15}m`;
+  },
 } as any;
 
 function footerData(statuses: ReadonlyMap<string, string> = new Map()): ReadonlyFooterDataProvider {
@@ -42,6 +59,45 @@ function expectAllLinesFit(lines: string[], width: number): void {
     expect(visibleWidth(line)).toBeLessThanOrEqual(width);
   }
 }
+
+describe("RoachFooter Powerline styling", () => {
+  it("renders concrete Nerd Font icons and the Powerline segment separator", () => {
+    setUseNerdIcons(true);
+    try {
+      expect(Object.values(ICONS).every((icon) => icon.length > 0)).toBe(true);
+
+      const rendered = createFooter().render(100).join("\n");
+
+      expect(rendered).toContain("");
+      expect(rendered).toContain(ICONS.folder);
+      expect(rendered).toContain(ICONS.branch);
+      expect(rendered).toContain(ICONS.model);
+    } finally {
+      setUseNerdIcons(false);
+    }
+  });
+
+  it("renders the original-style foreground palette without background blocks", () => {
+    const footer = new RoachFooter(
+      ansiTheme,
+      footerData(),
+      {
+        cwd: "/tmp/powerline-project",
+        getModelName: () => "test-model",
+        getContextUsage: () => ({ tokens: 42_000, contextWindow: 200_000, percent: 21 }),
+      },
+      { totalInput: 100, totalCacheRead: 50 },
+      { running: new Map() },
+    );
+
+    const rendered = footer.render(100).join("\n");
+
+    expect(rendered).toContain("\x1b[38;2;0;175;175m");
+    expect(rendered).toContain("\x1b[38;2;215;135;175m");
+    expect(rendered).toContain("\x1b[38;5;244m");
+    expect(rendered).not.toContain("\x1b[48;");
+  });
+});
 
 describe("RoachFooter status bridge", () => {
   it("renders the base footer without extension statuses", () => {

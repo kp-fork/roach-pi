@@ -27,11 +27,13 @@ export interface ActiveTools {
 
 type FooterSegmentId = "path" | "git" | "model" | "context" | "statuses" | "tools" | "cache";
 
+type FooterSegmentColor = ThemeColor | "path" | "model" | "separator";
+
 type FooterSegment = {
   id: FooterSegmentId;
   text: string;
   icon: string;
-  color: ThemeColor;
+  color: FooterSegmentColor;
   priority: number;
 };
 
@@ -47,7 +49,7 @@ export interface FooterOptions {
 // Nerd Font Icons
 // ═══════════════════════════════════════════════════════════════════════════
 
-const ICONS = { folder: "", branch: "", model: "", context: "", cache: "", tool: "", status: "" } as const;
+const ICONS = { folder: "", branch: "", model: "󰚩", context: "󰍛", cache: "󰆼", tool: "󰒓", status: "󰄬" } as const;
 const ICONS_PLAIN = { folder: "📁", branch: "⎇", model: "◆", context: "◈", cache: "⊡", tool: "▶", status: "●" } as const;
 
 let useNerdIcons = true;
@@ -58,7 +60,7 @@ function getIcons() { return useNerdIcons ? ICONS : ICONS_PLAIN; }
 // ═══════════════════════════════════════════════════════════════════════════
 
 // U+E0B0 Powerline right arrow
-const SEP_POWERLINE = "";
+const SEP_POWERLINE = "";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Presets
@@ -94,6 +96,23 @@ function fitLine(text: string, width: number): string {
   return truncateToWidth(text, width, "");
 }
 
+const POWERLINE_COLORS = {
+  path: "\x1b[38;2;0;175;175m",
+  model: "\x1b[38;2;215;135;175m",
+  separator: "\x1b[38;5;244m",
+} as const;
+
+function getSegmentFgAnsi(color: FooterSegmentColor, theme: Theme): string {
+  if (color === "path" || color === "model" || color === "separator") {
+    return POWERLINE_COLORS[color];
+  }
+  return typeof theme.getFgAnsi === "function" ? theme.getFgAnsi(color) : "";
+}
+
+function colorSegmentText(color: FooterSegmentColor, text: string, theme: Theme): string {
+  return `${getSegmentFgAnsi(color, theme)}${text}\x1b[39m`;
+}
+
 function getExtensionStatusText(statuses: ReadonlyMap<string, string>): string | null {
   const parts = [...statuses.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
@@ -103,10 +122,10 @@ function getExtensionStatusText(statuses: ReadonlyMap<string, string>): string |
 }
 
 /**
- * Render a line of segments with Powerline  separators.
- * All colors go through theme.fg() — adapts to any terminal theme.
+ * Render a line of segments with Powerline separators.
+ * Uses the original-style foreground palette; no background blocks.
  *
- * Visual: [accent:  project] [success:  main] [dim:  model]
+ * Visual: [teal project][green main][mauve model]
  */
 function renderPowerlineLine(segments: FooterSegment[], width: number, theme: Theme): string {
   if (width <= 0 || segments.length === 0) return "";
@@ -115,11 +134,10 @@ function renderPowerlineLine(segments: FooterSegment[], width: number, theme: Th
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
     const icon = seg.icon ? `${seg.icon} ` : "";
-    parts.push(theme.fg(seg.color, ` ${icon}${seg.text}`));
+    parts.push(colorSegmentText(seg.color, ` ${icon}${seg.text}`, theme));
 
     if (i < segments.length - 1) {
-      // Arrow in dim color — visible on both light and dark backgrounds
-      parts.push(theme.fg("dim", SEP_POWERLINE));
+      parts.push(colorSegmentText("separator", SEP_POWERLINE, theme));
     }
   }
 
@@ -255,11 +273,11 @@ export class RoachFooter implements Component {
 
     const segs = new Map<FooterSegmentId, FooterSegment>();
 
-    segs.set("path", { id: "path", text: dirName, icon: icons.folder, color: "accent", priority: 0 });
+    segs.set("path", { id: "path", text: dirName, icon: icons.folder, color: "path", priority: 0 });
     if (branch && branch !== "detached") {
       segs.set("git", { id: "git", text: branch, icon: icons.branch, color: "success", priority: 1 });
     }
-    segs.set("model", { id: "model", text: modelName, icon: icons.model, color: "dim", priority: 2 });
+    segs.set("model", { id: "model", text: modelName, icon: icons.model, color: "model", priority: 2 });
     segs.set("context", { id: "context", text: ctxPart, icon: icons.context, color: "dim", priority: 0 });
     segs.set("cache", { id: "cache", text: `cache ${cacheRate}%`, icon: icons.cache, color: cacheColor, priority: 5 });
 
