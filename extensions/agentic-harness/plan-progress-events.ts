@@ -216,6 +216,99 @@ export async function loadPlanFromToolResultEvent(
   return false;
 }
 
+type SessionMessageEntryLike = {
+  type?: unknown;
+  message?: unknown;
+};
+
+type ToolCallRecord = {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+};
+
+function extractAssistantToolCalls(message: unknown): ToolCallRecord[] {
+  if (!message || typeof message !== "object") return [];
+  if ((message as { role?: unknown }).role !== "assistant") return [];
+
+  const content = (message as { content?: unknown }).content;
+  if (!Array.isArray(content)) return [];
+
+  const calls: ToolCallRecord[] = [];
+  for (const item of content) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as { type?: unknown; id?: unknown; name?: unknown; arguments?: unknown };
+    if (record.type !== "toolCall") continue;
+    if (typeof record.id !== "string" || typeof record.name !== "string") continue;
+    if (!record.arguments || typeof record.arguments !== "object") continue;
+    calls.push({
+      id: record.id,
+      name: record.name,
+      args: record.arguments as Record<string, unknown>,
+    });
+  }
+  return calls;
+}
+
+function getMessageFromEntry(entry: unknown): unknown {
+  if (!entry || typeof entry !== "object") return undefined;
+  const record = entry as SessionMessageEntryLike;
+  if (record.type !== "message") return undefined;
+  return record.message;
+}
+
+export async function reconstructPlanProgressFromSessionEntries(
+  tracker: PlanProgressTracker,
+  entries: unknown[],
+  cwd?: string,
+  sessionPlanPaths: Set<string> = new Set<string>(),
+): Promise<void> {
+  const toolCallArgsById = new Map<string, Record<string, unknown>>();
+
+  for (const entry of entries) {
+    const message = getMessageFromEntry(entry);
+    if (!message || typeof message !== "object") continue;
+
+    const role = (message as { role?: unknown }).role;
+
+    if (role === "assistant") {
+      await loadPlanFromAssistantMessageEnd(tracker, { message }, cwd, sessionPlanPaths);
+      for (const call of extractAssistantToolCalls(message)) {
+        toolCallArgsById.set(call.id, call.args);
+      }
+      continue;
+    }
+
+    if (role !== "toolResult") continue;
+
+    const toolCallId = (message as { toolCallId?: unknown }).toolCallId;
+    const toolName = (message as { toolName?: unknown }).toolName;
+    if (typeof toolCallId !== "string" || typeof toolName !== "string") continue;
+
+    const args = toolCallArgsById.get(toolCallId);
+    if (toolName === "read" || toolName === "write") {
+      await loadPlanFromToolResultEvent(tracker, {
+        toolName,
+        input: args,
+        content: (message as { content?: unknown }).content,
+      }, cwd, sessionPlanPaths);
+    }
+
+    if (toolName === "subagent" && args) {
+      await reloadPlanFromSubagentArgs(tracker, args, cwd);
+      const matchedTaskIds = startPlanSubagentTasks(tracker, args);
+      completePlanSubagentTasks(
+        tracker,
+        args,
+        !((message as { isError?: unknown }).isError ?? false),
+        matchedTaskIds,
+      );
+    }
+
+    toolCallArgsById.delete(toolCallId);
+  }
+}
+
 export async function reloadPlanFromSubagentArgs(
   tracker: PlanProgressTracker,
   args: unknown,

@@ -9,6 +9,7 @@ import {
   getToolExecutionArgs,
   loadPlanFromAssistantMessageEnd,
   loadPlanFromToolResultEvent,
+  reconstructPlanProgressFromSessionEntries,
   reloadPlanFromSubagentArgs,
   startPlanSubagentTasks,
 } from "../plan-progress-events.js";
@@ -504,6 +505,61 @@ describe("plan progress subagent task tracking", () => {
     }, false, matchedIds);
 
     expect(tracker.getProgress()).toMatchObject({ failed: 1, running: 0, pending: 2 });
+  });
+});
+
+describe("plan progress session-entry reconstruction", () => {
+  function messageEntry(message: unknown) {
+    return { type: "message", message };
+  }
+
+  it("reconstructs a completed task from a mixed compliance-worker-validator subagent chain", async () => {
+    const tracker = new PlanProgressTracker();
+    const args = {
+      chain: [
+        { agent: "plan-compliance", task: "check compliance", planFile: PLAN_PATH, planTaskId: 1 },
+        { agent: "plan-worker", task: "implement task", planFile: PLAN_PATH, planTaskId: 1 },
+        { agent: "plan-validator", task: "validate", planFile: PLAN_PATH, planTaskId: 1 },
+      ],
+    };
+
+    await reconstructPlanProgressFromSessionEntries(tracker, [
+      messageEntry({ role: "assistant", content: [{ type: "text", text: trackingPlan() }] }),
+      messageEntry({ role: "assistant", content: [{ type: "toolCall", id: "call-1", name: "subagent", arguments: args }] }),
+      messageEntry({ role: "toolResult", toolCallId: "call-1", toolName: "subagent", content: [{ type: "text", text: "PASS" }], isError: false }),
+    ], ".");
+
+    expect(tracker.hasPlan()).toBe(true);
+    expect(tracker.getProgress()).toMatchObject({ completed: 1, running: 0, pending: 2 });
+  });
+
+  it("reconstructs a failed task from an errored subagent tool result", async () => {
+    const tracker = new PlanProgressTracker();
+    const args = { agent: "plan-worker", task: "Task 2", planTaskId: 2 };
+
+    await reconstructPlanProgressFromSessionEntries(tracker, [
+      messageEntry({ role: "assistant", content: [{ type: "text", text: trackingPlan() }] }),
+      messageEntry({ role: "assistant", content: [{ type: "toolCall", id: "call-2", name: "subagent", arguments: args }] }),
+      messageEntry({ role: "toolResult", toolCallId: "call-2", toolName: "subagent", content: [{ type: "text", text: "FAILED" }], isError: true }),
+    ], ".");
+
+    expect(tracker.getProgress()).toMatchObject({ failed: 1, running: 0, pending: 2 });
+  });
+
+  it("reconstructs a plan from persisted write tool call arguments", async () => {
+    const tracker = new PlanProgressTracker();
+    const markdown = samplePlan("Loaded from replayed write");
+
+    await reconstructPlanProgressFromSessionEntries(tracker, [
+      messageEntry({
+        role: "assistant",
+        content: [{ type: "toolCall", id: "write-plan", name: "write", arguments: { path: PLAN_PATH, content: markdown } }],
+      }),
+      messageEntry({ role: "toolResult", toolCallId: "write-plan", toolName: "write", content: [{ type: "text", text: "Wrote file" }], isError: false }),
+    ], ".");
+
+    expect(tracker.hasPlan()).toBe(true);
+    expect(tracker.getGoal()).toBe("Loaded from replayed write");
   });
 });
 
