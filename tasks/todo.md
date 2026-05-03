@@ -1,3 +1,25 @@
+# Editor Stash Shortcuts Bug — Completed
+
+## Problem
+- Prompt footer shows `^S save  ^R restore  ^K clear`, but shortcuts did not work in terminals that encode modified keys as CSI-u / modifyOtherKeys sequences.
+
+## Debugging Plan
+- [x] Reproduce existing unit coverage: raw Ctrl byte tests pass, so current tests missed real terminal encoded shortcuts.
+- [x] Inspect Pi TUI keyboard handling for terminal shortcut encodings.
+- [x] Add failing regression coverage for CSI-u / modifyOtherKeys Ctrl+S/R/K input.
+- [x] Fix shortcut matching to use Pi TUI key matcher instead of raw byte equality.
+- [x] Verify focused tests and build.
+
+## Evidence
+- Failing guard before fix: `npm --prefix extensions/agentic-harness test -- --run tests/editor-composition.test.ts` failed on CSI-u `Ctrl+S` (`stash.get()` remained `null`).
+- Root cause: `editor-composition.ts` compared input to raw control bytes (`\x13`, `\x12`, `\x0b`) instead of using Pi TUI's `matchesKey`, so encoded terminal sequences bypassed the stash handlers.
+
+## Verification
+- [x] `npm --prefix extensions/agentic-harness test -- --run tests/editor-composition.test.ts tests/editor-stash.test.ts`
+- [x] `npm --prefix extensions/agentic-harness test -- --run tests/editor-composition.test.ts tests/editor-stash.test.ts tests/extension.test.ts && npm --prefix extensions/agentic-harness run build`
+
+---
+
 # Workspace Memory Prompt Cap — Completed
 
 ## Goal

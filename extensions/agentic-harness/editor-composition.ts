@@ -1,5 +1,5 @@
 import { CustomEditor } from "@mariozechner/pi-coding-agent";
-import { truncateToWidth, type EditorComponent, type EditorTheme, type TUI } from "@mariozechner/pi-tui";
+import { matchesKey, truncateToWidth, type EditorComponent, type EditorTheme, type TUI } from "@mariozechner/pi-tui";
 import {
   clearEditorText,
   defaultEditorStash,
@@ -23,6 +23,9 @@ export interface EditorCompositionOptions {
 const SHORTCUT_SAVE = "\x13"; // Ctrl+S
 const SHORTCUT_RESTORE = "\x12"; // Ctrl+R
 const SHORTCUT_CLEAR = "\x0b"; // Ctrl+K
+const SHORTCUT_SAVE_KEY = "ctrl+s";
+const SHORTCUT_RESTORE_KEY = "ctrl+r";
+const SHORTCUT_CLEAR_KEY = "ctrl+k";
 
 function renderStatusLine(width: number, stash: EditorStash): string {
   const state = stash.hasValue() ? `stash ${stash.getLength()}c` : "stash empty";
@@ -43,12 +46,12 @@ export function decorateEditor(editor: EditorComponent, ui: EditorTextUi, stash:
 
   const originalHandleInput = editor.handleInput.bind(editor);
   editor.handleInput = (data: string) => {
-    if (data === SHORTCUT_SAVE) {
+    if (matchesKey(data, SHORTCUT_SAVE_KEY)) {
       const text = saveEditorToStash(ui, stash);
       ui.notify?.(`Saved editor stash (${text.length} char${text.length === 1 ? "" : "s"}).`, "info");
       return;
     }
-    if (data === SHORTCUT_RESTORE) {
+    if (matchesKey(data, SHORTCUT_RESTORE_KEY)) {
       if (!restoreEditorFromStash(ui, stash)) {
         ui.notify?.("No editor stash saved yet.", "warning");
       } else {
@@ -56,7 +59,7 @@ export function decorateEditor(editor: EditorComponent, ui: EditorTextUi, stash:
       }
       return;
     }
-    if (data === SHORTCUT_CLEAR) {
+    if (matchesKey(data, SHORTCUT_CLEAR_KEY)) {
       clearEditorText(ui);
       ui.notify?.("Editor cleared. Use Ctrl+R or /stash-restore to restore stash.", "info");
       return;

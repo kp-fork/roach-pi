@@ -1,5 +1,6 @@
 # Lessons
 
+- When implementing terminal shortcuts, do not compare only raw control bytes. Use Pi TUI `matchesKey`/keybinding helpers and test encoded terminal variants (CSI-u / modifyOtherKeys) because visible shortcut hints can render while real key events arrive in a different format.
 - Before making or committing changes, confirm the target repository path when multiple repos are in context. Do not continue working in a repo just because it appeared in compacted history; explicitly verify it matches the user's current "our repo" reference.
 - For UI state that survives reload, always test both live event handling and `session_start` history reconstruction. A fix that only handles new tool events can still fail after reload if stale custom snapshots are restored.
 - For milestone tracking, test every real lifecycle signal separately: artifact/state discovery, active planning start, execution, validation, completion, and reload. Do not assume detecting the milestone list implies active status transitions work.

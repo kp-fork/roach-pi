@@ -107,6 +107,21 @@ describe("editor composition", () => {
     expect(ui.text).toBe("saved text");
   });
 
+  it("matches encoded terminal shortcuts for stash operations", () => {
+    const stash = new EditorStash();
+    const ui = createUi("saved text");
+    const editor = decorateEditor(createEditor(), ui as any, stash);
+
+    editor.handleInput("\x1b[115;5u");
+    expect(stash.get()).toBe("saved text");
+
+    editor.handleInput("\x1b[27;5;107~");
+    expect(ui.text).toBe("");
+
+    editor.handleInput("\x1b[114;5u");
+    expect(ui.text).toBe("saved text");
+  });
+
   it("passes through unhandled input to the previous editor", () => {
     const base = createEditor();
     const originalHandleInput = base.handleInput;
