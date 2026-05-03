@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.21.2](https://github.com/tmdgusya/roach-pi/compare/v1.21.1...v1.21.2) (2026-05-03)
+
+### Bug Fixes
+
+* **harness:** match encoded editor stash shortcuts ([3ad3454](https://github.com/tmdgusya/roach-pi/commit/3ad34545c503b41072b8e81ba4f860f6176fe07b))
+
 ## [1.21.1](https://github.com/tmdgusya/roach-pi/compare/v1.21.0...v1.21.1) (2026-05-03)
 
 ### Bug Fixes
