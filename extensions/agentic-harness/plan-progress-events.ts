@@ -552,6 +552,16 @@ export function subagentItemRecords(args: unknown): Record<string, unknown>[] {
   return items;
 }
 
+const PLAN_PROGRESS_AGENTS = new Set(["plan-compliance", "plan-worker", "plan-validator"]);
+
+function isPlanProgressAgent(item: Record<string, unknown>): boolean {
+  return typeof item.agent === "string" && PLAN_PROGRESS_AGENTS.has(item.agent);
+}
+
+function uniqueNumbers(values: number[]): number[] {
+  return [...new Set(values)];
+}
+
 function taskText(item: Record<string, unknown>): string {
   return typeof item.task === "string" ? item.task : "";
 }
@@ -570,6 +580,7 @@ export function startPlanSubagentTasks(
 
   const matchedIds: number[] = [];
   for (const item of subagentItemRecords(args)) {
+    if (!isPlanProgressAgent(item)) continue;
     const taskId = planTaskId(item);
     const matchedId = taskId !== null
       ? tracker.startTaskById(taskId)
@@ -587,34 +598,67 @@ export function completePlanSubagentTasks(
 ): number[] {
   if (!tracker.hasPlan()) return [];
 
-  const items = subagentItemRecords(args);
-  const shouldComplete = !success || items.some((item) => item.agent === "plan-validator");
+  const items = subagentItemRecords(args).filter(isPlanProgressAgent);
+  if (items.length === 0) return [];
 
-  if (matchedTaskIds && matchedTaskIds.length > 0) {
-    if (shouldComplete) {
+  if (!success) {
+    const failedIds: number[] = [];
+    if (matchedTaskIds && matchedTaskIds.length > 0) {
       for (const taskId of matchedTaskIds) {
-        tracker.completeTask(taskId, success);
+        tracker.completeTask(taskId, false);
+        failedIds.push(taskId);
       }
+      return uniqueNumbers(failedIds);
     }
-    return matchedTaskIds;
+
+    for (const item of items) {
+      const taskId = planTaskId(item);
+      if (taskId !== null) {
+        const startedId = tracker.startTaskById(taskId);
+        if (startedId !== null) {
+          tracker.completeTask(startedId, false);
+          failedIds.push(startedId);
+        }
+        continue;
+      }
+
+      const matchedId = tracker.completeTaskByMatch(taskText(item), false);
+      if (matchedId !== null) failedIds.push(matchedId);
+    }
+    return uniqueNumbers(failedIds);
   }
+
+  const validatorItems = items.filter((item) => item.agent === "plan-validator");
+  if (validatorItems.length === 0) return [];
 
   const completedIds: number[] = [];
-  const matchedSet = new Set(matchedTaskIds ?? []);
-  for (const item of items) {
-    const taskId = planTaskId(item);
-    if (taskId !== null && !matchedSet.has(taskId)) continue;
-    if (taskId !== null) {
-      if (shouldComplete) tracker.completeTask(taskId, success);
-      completedIds.push(taskId);
-      continue;
-    }
+  const explicitValidatorTaskIds = validatorItems
+    .map((item) => planTaskId(item))
+    .filter((taskId): taskId is number => taskId !== null);
 
-    if (!shouldComplete) continue;
-    const matchedId = tracker.completeTaskByMatch(taskText(item), success);
+  if (explicitValidatorTaskIds.length > 0) {
+    for (const taskId of explicitValidatorTaskIds) {
+      const startedId = tracker.startTaskById(taskId);
+      if (startedId === null) continue;
+      tracker.completeTask(startedId, true);
+      completedIds.push(startedId);
+    }
+    return uniqueNumbers(completedIds);
+  }
+
+  if (matchedTaskIds && matchedTaskIds.length > 0) {
+    for (const taskId of matchedTaskIds) {
+      tracker.completeTask(taskId, true);
+      completedIds.push(taskId);
+    }
+    return uniqueNumbers(completedIds);
+  }
+
+  for (const item of validatorItems) {
+    const matchedId = tracker.completeTaskByMatch(taskText(item), true);
     if (matchedId !== null) completedIds.push(matchedId);
   }
-  return completedIds;
+  return uniqueNumbers(completedIds);
 }
 
 const STATE_MD_RE = /(?:^|\/)state\.md$/i;

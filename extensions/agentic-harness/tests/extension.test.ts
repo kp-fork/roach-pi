@@ -1309,4 +1309,153 @@ describe("No Global State File", () => {
 
     expect(customEntries.length).toBeGreaterThanOrEqual(0);
   });
+
+  it("persists plan progress when validator completion has planTaskId but no matched ids", async () => {
+    const { mockPi, events } = createMockPi();
+    extension(mockPi);
+
+    const planMarkdown = [
+      "# Snapshot Plan",
+      "",
+      "**Goal:** Persist explicit validator completion",
+      "",
+      "---",
+      "",
+      "### Task 1: Persist validator completion",
+      "",
+      "**Dependencies:** None",
+      "**Files:**",
+      "- Modify: `extensions/agentic-harness/index.ts`",
+      "",
+      "- [ ] **Step 1: Complete**",
+      "",
+      "Run: `npm test -- --run tests/extension.test.ts`",
+      "Expected: pass",
+    ].join("\n");
+
+    const customEntries: Array<{ customType: string; data?: any }> = [];
+    let footerFactory: any;
+    const mockSessionManager = {
+      getBranch: () => [
+        { type: "message", message: { role: "assistant", content: [{ type: "text", text: planMarkdown }] } },
+      ],
+      appendCustomEntry: (customType: string, data?: unknown) => {
+        customEntries.push({ customType, data });
+        return "snap-id";
+      },
+    };
+
+    await events.get("session_start")![0]({ type: "session_start", reason: "reload" } as any, {
+      cwd: ".",
+      ui: {
+        setHeader: vi.fn(),
+        setFooter: (fn: any) => { footerFactory = fn; },
+        notify: vi.fn(),
+        setWorkingVisible: vi.fn(),
+      },
+      sessionManager: mockSessionManager,
+      model: { name: "test" },
+      getContextUsage: () => undefined,
+    } as any);
+
+    await events.get("tool_execution_end")![0]({
+      toolCallId: "validator-without-start",
+      toolName: "subagent",
+      args: { agent: "plan-validator", task: "validate", planTaskId: 1 },
+      isError: false,
+    }, {
+      cwd: ".",
+      sessionManager: mockSessionManager,
+    } as any);
+
+    const planSnapshots = customEntries.filter((entry) => entry.customType === "plan-progress");
+    expect(planSnapshots.length).toBeGreaterThan(0);
+    expect(planSnapshots.at(-1)?.data?.taskStatuses).toEqual([{ id: 1, status: "completed" }]);
+
+    const footer = footerFactory({ requestRender: vi.fn() }, {
+      fg: (_color: string, text: string) => text,
+      bold: (text: string) => text,
+    } as any, { getGitBranch: () => undefined } as any);
+    const rendered = footer.render(120).join("\n");
+    expect(rendered).toContain("1/1");
+    expect(rendered).toContain("✓ Persist validator completion");
+    footer.dispose?.();
+  });
+
+  it("ignores non-plan subagent events in plan progress tool wiring", async () => {
+    const { mockPi, events } = createMockPi();
+    extension(mockPi);
+
+    const planMarkdown = [
+      "# Ignore Non Plan Agent",
+      "",
+      "**Goal:** Ignore worker task text",
+      "",
+      "---",
+      "",
+      "### Task 1: Should stay pending",
+      "",
+      "**Dependencies:** None",
+      "**Files:**",
+      "- Modify: `extensions/agentic-harness/index.ts`",
+      "",
+      "- [ ] **Step 1: Stay pending**",
+      "",
+      "Run: `npm test -- --run tests/extension.test.ts`",
+      "Expected: pass",
+    ].join("\n");
+
+    const customEntries: Array<{ customType: string; data?: unknown }> = [];
+    let footerFactory: any;
+    const mockSessionManager = {
+      getBranch: () => [
+        { type: "message", message: { role: "assistant", content: [{ type: "text", text: planMarkdown }] } },
+      ],
+      appendCustomEntry: (customType: string, data?: unknown) => {
+        customEntries.push({ customType, data });
+        return "snap-id";
+      },
+    };
+
+    await events.get("session_start")![0]({ type: "session_start", reason: "reload" } as any, {
+      cwd: ".",
+      ui: {
+        setHeader: vi.fn(),
+        setFooter: (fn: any) => { footerFactory = fn; },
+        notify: vi.fn(),
+        setWorkingVisible: vi.fn(),
+      },
+      sessionManager: mockSessionManager,
+      model: { name: "test" },
+      getContextUsage: () => undefined,
+    } as any);
+
+    await events.get("tool_execution_start")![0]({
+      toolCallId: "worker-non-plan",
+      toolName: "subagent",
+      args: { agent: "worker", task: "Task 1" },
+    }, { cwd: "." } as any);
+
+    await events.get("tool_execution_end")![0]({
+      toolCallId: "worker-non-plan",
+      toolName: "subagent",
+      args: { agent: "worker", task: "Task 1" },
+      isError: false,
+    }, {
+      cwd: ".",
+      sessionManager: mockSessionManager,
+    } as any);
+
+    expect(customEntries.filter((entry) => entry.customType === "plan-progress")).toEqual([]);
+
+    const footer = footerFactory({ requestRender: vi.fn() }, {
+      fg: (_color: string, text: string) => text,
+      bold: (text: string) => text,
+    } as any, { getGitBranch: () => undefined } as any);
+    const rendered = footer.render(120).join("\n");
+    expect(rendered).toContain("0/1");
+    expect(rendered).toContain("○ Should stay pending");
+    expect(rendered).not.toContain("running");
+    footer.dispose?.();
+  });
 });

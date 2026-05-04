@@ -197,7 +197,7 @@ export class RoachFooter implements Component {
 
   private schedulePlanRender() {
     this.updateSpinnerTimer();
-    this.tui?.requestRender(true);
+    this.tui?.requestRender();
   }
 
   private updateSpinnerTimer() {
@@ -205,7 +205,7 @@ export class RoachFooter implements Component {
     if (has && !this.spinnerTimer) {
       this.spinnerTimer = setInterval(() => {
         if ((this.planProgress?.getProgress().running ?? 0) === 0) { this.updateSpinnerTimer(); return; }
-        this.tui?.requestRender(true);
+        this.tui?.requestRender();
       }, PLAN_PROGRESS_SPINNER_MS);
     } else if (!has && this.spinnerTimer) {
       clearInterval(this.spinnerTimer); this.spinnerTimer = null;

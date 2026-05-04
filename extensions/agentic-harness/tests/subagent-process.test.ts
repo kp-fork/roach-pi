@@ -113,21 +113,20 @@ describe.runIf(process.platform !== "win32")("runAgent process ownership", () =>
           return false;
         }
       }, 2000);
-      vi.useFakeTimers();
       controller.abort();
-      await vi.advanceTimersByTimeAsync(5_000);
-      await vi.waitFor(() => {
+      await waitFor(() => {
         const tmuxCalls = readFileSync(callsFile, "utf8");
-        expect(tmuxCalls).toContain("send-keys -t %1 C-c");
-        expect(tmuxCalls).toContain("kill-pane -t %1");
-      });
-      await vi.advanceTimersByTimeAsync(25);
+        return tmuxCalls.includes("send-keys -t %1 C-c") && tmuxCalls.includes("kill-pane -t %1");
+      }, 7_000);
+      const tmuxCalls = readFileSync(callsFile, "utf8");
+      expect(tmuxCalls).toContain("send-keys -t %1 C-c");
+      expect(tmuxCalls).toContain("kill-pane -t %1");
       const result = await runPromise;
       expect(result.exitCode).toBe(130);
     } finally {
       process.env.PATH = originalPath;
     }
-  });
+  }, 10_000);
 
   it("does not complete from a stale tmux exit marker", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "subagent-process-tmux-stale-"));

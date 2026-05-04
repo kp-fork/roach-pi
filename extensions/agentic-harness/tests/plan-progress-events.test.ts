@@ -364,7 +364,7 @@ describe("plan progress subagent task tracking", () => {
       task: "final output wording differs from the task name",
     }, true, matchedIds);
 
-    expect(completedIds).toEqual([1]);
+    expect(completedIds).toEqual([]);
     expect(tracker.getProgress()).toMatchObject({ completed: 0, running: 1, pending: 2 });
   });
 
@@ -428,7 +428,7 @@ describe("plan progress subagent task tracking", () => {
     expect(tracker.getProgress()).toMatchObject({ completed: 2, running: 0, pending: 1 });
   });
 
-  it("does not alter progress for non-plan agents unless task text clearly matches", () => {
+  it("ignores non-plan agents even when task text names a task", () => {
     const tracker = loadTrackingPlan();
 
     expect(startPlanSubagentTasks(tracker, {
@@ -440,8 +440,21 @@ describe("plan progress subagent task tracking", () => {
     expect(startPlanSubagentTasks(tracker, {
       agent: "worker",
       task: "Task 3",
-    })).toEqual([3]);
-    expect(tracker.getProgress()).toMatchObject({ running: 1, pending: 2 });
+    })).toEqual([]);
+    expect(tracker.getProgress()).toMatchObject({ running: 0, pending: 3 });
+  });
+
+  it("ignores reviewer and nested non-plan agents even when text names a task", () => {
+    const tracker = loadTrackingPlan();
+
+    expect(startPlanSubagentTasks(tracker, {
+      tasks: [
+        { agent: "reviewer-bug", task: "Task 1" },
+        { agent: "explorer", task: "Task 2" },
+        { agent: "worker", task: "Task 3" },
+      ],
+    })).toEqual([]);
+    expect(tracker.getProgress()).toMatchObject({ running: 0, pending: 3, completed: 0 });
   });
 
   it("marks stored running tasks failed when the subagent tool execution fails", () => {
@@ -473,6 +486,51 @@ describe("plan progress subagent task tracking", () => {
 
     expect(matchedIds).toEqual([1]);
     expect(tracker.getProgress()).toMatchObject({ running: 1, pending: 2 });
+  });
+
+  it("completes explicit validator planTaskId even when matchedTaskIds are absent", () => {
+    const tracker = loadTrackingPlan();
+
+    const workerIds = startPlanSubagentTasks(tracker, {
+      agent: "plan-worker",
+      task: "implement task",
+      planFile: PLAN_PATH,
+      planTaskId: 1,
+    });
+    expect(workerIds).toEqual([1]);
+
+    const workerCompleted = completePlanSubagentTasks(tracker, {
+      agent: "plan-worker",
+      task: "implement task",
+      planFile: PLAN_PATH,
+      planTaskId: 1,
+    }, true, workerIds);
+    expect(workerCompleted).toEqual([]);
+    expect(tracker.getProgress()).toMatchObject({ completed: 0, running: 1, pending: 2 });
+
+    const validatorCompleted = completePlanSubagentTasks(tracker, {
+      agent: "plan-validator",
+      task: "validate",
+      planFile: PLAN_PATH,
+      planTaskId: 1,
+    }, true);
+
+    expect(validatorCompleted).toEqual([1]);
+    expect(tracker.getProgress()).toMatchObject({ completed: 1, running: 0, pending: 2 });
+  });
+
+  it("completes pending explicit validator planTaskId without a prior start", () => {
+    const tracker = loadTrackingPlan();
+
+    const completedIds = completePlanSubagentTasks(tracker, {
+      agent: "plan-validator",
+      task: "validate",
+      planFile: PLAN_PATH,
+      planTaskId: 2,
+    }, true);
+
+    expect(completedIds).toEqual([2]);
+    expect(tracker.getProgress()).toMatchObject({ completed: 1, running: 0, pending: 2 });
   });
 
   it("keeps tasks running through compliance and worker success, then completes on validator success", () => {
@@ -565,7 +623,7 @@ describe("plan progress subagent task tracking", () => {
 
     completePlanSubagentTasks(tracker, args, true, matchedIds);
 
-    expect(tracker.getProgress()).toMatchObject({ completed: 2, running: 0, pending: 1 });
+    expect(tracker.getProgress()).toMatchObject({ completed: 1, running: 1, pending: 1 });
   });
 
   it("marks a task failed when any plan stage with planTaskId fails", () => {

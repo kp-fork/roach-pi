@@ -348,7 +348,8 @@ describe("RoachFooter plan progress hosting", () => {
 
     tracker.startTask(1);
 
-    expect(requestRender).toHaveBeenCalledWith(true);
+    expect(requestRender).toHaveBeenCalledWith();
+    expect(requestRender.mock.calls.every((call) => call[0] !== true)).toBe(true);
     footer.dispose();
   });
 
@@ -375,6 +376,7 @@ describe("RoachFooter plan progress hosting", () => {
     vi.advanceTimersByTime(1_200);
 
     expect(requestRender.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(requestRender.mock.calls.every((call) => call[0] !== true)).toBe(true);
 
     footer.dispose();
     requestRender.mockClear();
@@ -405,6 +407,7 @@ describe("RoachFooter plan progress hosting", () => {
     tracker.startTask(1);
     vi.advanceTimersByTime(800);
     expect(requestRender.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(requestRender.mock.calls.every((call) => call[0] !== true)).toBe(true);
 
     tracker.completeTask(1, true);
     requestRender.mockClear();
@@ -434,8 +437,10 @@ describe("RoachFooter plan progress hosting", () => {
     const secondFooter = new RoachFooter(...footerArgs, { requestRender: secondRender } as any);
 
     tracker.startTask(1);
-    expect(firstRender).toHaveBeenCalledWith(true);
-    expect(secondRender).toHaveBeenCalledWith(true);
+    expect(firstRender).toHaveBeenCalledWith();
+    expect(secondRender).toHaveBeenCalledWith();
+    expect(firstRender.mock.calls.every((call) => call[0] !== true)).toBe(true);
+    expect(secondRender.mock.calls.every((call) => call[0] !== true)).toBe(true);
 
     firstFooter.dispose();
     firstRender.mockClear();
@@ -443,7 +448,8 @@ describe("RoachFooter plan progress hosting", () => {
     tracker.completeTask(1, true);
 
     expect(firstRender).not.toHaveBeenCalled();
-    expect(secondRender).toHaveBeenCalledWith(true);
+    expect(secondRender).toHaveBeenCalledWith();
+    expect(secondRender.mock.calls.every((call) => call[0] !== true)).toBe(true);
     secondFooter.dispose();
   });
 });

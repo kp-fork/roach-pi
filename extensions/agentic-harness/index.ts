@@ -1820,8 +1820,8 @@ Do not start multi-step implementation without a clear understanding of what the
       const args = getToolExecutionArgs(event, toolCallArgsById.get(event.toolCallId));
       if (args) {
         const matchedTaskIds = planTaskIdsByToolCallId.get(event.toolCallId);
-        completePlanSubagentTasks(planProgress, args, !(event.isError ?? false), matchedTaskIds);
-        if (matchedTaskIds && matchedTaskIds.length > 0) {
+        const affectedTaskIds = completePlanSubagentTasks(planProgress, args, !(event.isError ?? false), matchedTaskIds);
+        if (affectedTaskIds.length > 0) {
           persistProgressSnapshot(ctx);
         }
 
