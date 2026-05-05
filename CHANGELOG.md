@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.22.0](https://github.com/tmdgusya/roach-pi/compare/v1.21.4...v1.22.0) (2026-05-05)
+
+### Features
+
+* **footer:** background-block powerline rendering and new segments ([8c9816c](https://github.com/tmdgusya/roach-pi/commit/8c9816c09f1ab22d45f08870e27e24bcf218f153))
+* **footer:** expand FooterContext with git stats, thinking level, model info ([123422f](https://github.com/tmdgusya/roach-pi/commit/123422f692a4a49fdfa362cf9c5b27380a052730))
+* **sandbox:** make subagents YOLO - auto-approve all bash commands ([875f725](https://github.com/tmdgusya/roach-pi/commit/875f725a0ff8b4bac4ccd975f5e61ef650dc961d))
+
+### Bug Fixes
+
+* **footer:** add background colors to secondary metrics segments ([cfbc168](https://github.com/tmdgusya/roach-pi/commit/cfbc1685a9929f47542fd1c43e72a45b3522cd5b))
+* **footer:** tweak thinking color and ANSI-safe extension statuses ([f60ce07](https://github.com/tmdgusya/roach-pi/commit/f60ce07d585785c43a4fe39eefb127cd2da5d3b2)), closes [#008778](https://github.com/tmdgusya/roach-pi/issues/008778)
+
+### Documentation
+
+* **lessons:** add patterns from footer evolution ([eaf973b](https://github.com/tmdgusya/roach-pi/commit/eaf973b802c9e5cd13a602b38036718809d8435d))
+* mark slop-cleanup pilot superseded; add removal spec and plan ([3a46d99](https://github.com/tmdgusya/roach-pi/commit/3a46d997035315f97db25a601976535670f478fa))
+
+### Miscellaneous
+
+* **harness:** delete orphaned slop-cleaner files ([73b8a9e](https://github.com/tmdgusya/roach-pi/commit/73b8a9e65e25accd95f2d1e185e37f9d7c68b2b7))
+* **harness:** trim trailing blank line in discipline.ts ([254c47e](https://github.com/tmdgusya/roach-pi/commit/254c47ea91a82d47a71d6a6f362798175448e031))
+
+### Refactor
+
+* **harness:** sever slop-cleaner references ([1912177](https://github.com/tmdgusya/roach-pi/commit/19121774ae8194b8af6d8eced41f1a7de8ab1c44))
+
+### Tests
+
+* **footer:** fix test stubs for new FooterContext fields ([6e03851](https://github.com/tmdgusya/roach-pi/commit/6e03851897907580e489fede4fd78ec98e6c9e75))
+* **footer:** update tests for background blocks and new segments ([7e12556](https://github.com/tmdgusya/roach-pi/commit/7e1255679f280de3e64fe1bccbe6b361250578b6))
+
 ## [1.21.4](https://github.com/tmdgusya/roach-pi/compare/v1.21.3...v1.21.4) (2026-05-05)
 
 ### Bug Fixes
