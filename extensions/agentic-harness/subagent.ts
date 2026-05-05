@@ -24,6 +24,13 @@ const KILL_TIMEOUT_MS = 5000;
 const AGENT_END_GRACE_MS = 1000;
 const ENV_COMMAND = "/usr/bin/env";
 
+function shouldDetachChildProcess(): boolean {
+  // macOS can surface EBADF when detached children are spawned from the
+  // interactive TUI process. Keep native subagents foregrounded there and only
+  // use process-group signalling when a detached process group was created.
+  return process.platform !== "win32" && process.platform !== "darwin";
+}
+
 const SUBAGENT_DEPTH_ENV = "PI_SUBAGENT_DEPTH";
 const SUBAGENT_MAX_DEPTH_ENV = "PI_SUBAGENT_MAX_DEPTH";
 const SUBAGENT_STACK_ENV = "PI_SUBAGENT_STACK";
@@ -839,16 +846,17 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
       }
     } else {
       exitCode = await new Promise<number>((resolve) => {
+      const detached = shouldDetachChildProcess();
       const proc = spawn(resolvedSandbox.command, resolvedSandbox.args, {
         cwd: runCwd,
         shell: false,
-        detached: process.platform !== "win32",
+        detached,
         stdio: ["pipe", "pipe", "pipe"],
         env: resolvedSandbox.env,
       });
 
       const pid = proc.pid ?? 0;
-      const pgid = process.platform !== "win32" && pid > 0 ? pid : undefined;
+      const pgid = detached && pid > 0 ? pid : undefined;
 
       if (pid > 0) {
         emitLifecycle({
@@ -895,7 +903,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
       const sendSignal = (signalName: NodeJS.Signals) => {
         if (!pid) return;
         try {
-          if (process.platform !== "win32") {
+          if (detached) {
             process.kill(-pid, signalName);
           } else {
             proc.kill(signalName);

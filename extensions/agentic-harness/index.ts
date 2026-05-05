@@ -168,15 +168,18 @@ export default function (pi: ExtensionAPI) {
       requireApprovalForAllCommands,
     });
 
-    const sandboxedBashOperations = createSandboxedBashOperations(createRootSandbox());
-    const localBash = createBashTool(process.cwd(), { operations: sandboxedBashOperations });
-    pi.registerTool({
-      ...localBash,
-      label: "bash (sandboxed)",
-    });
-    pi.on("user_bash", (_event, ctx) => ({
-      operations: createSandboxedBashOperations(createRootSandbox(ctx as any, true)),
-    }));
+    const shouldRegisterSandboxedBash = process.platform !== "darwin" || process.env.PI_AGENTIC_SANDBOX_BASH === "1";
+    if (shouldRegisterSandboxedBash) {
+      const sandboxedBashOperations = createSandboxedBashOperations(createRootSandbox());
+      const localBash = createBashTool(process.cwd(), { operations: sandboxedBashOperations });
+      pi.registerTool({
+        ...localBash,
+        label: "bash (sandboxed)",
+      });
+      pi.on("user_bash", (_event, ctx) => ({
+        operations: createSandboxedBashOperations(createRootSandbox(ctx as any, true)),
+      }));
+    }
   }
 
   const AskUserQuestionParams = Type.Object({
