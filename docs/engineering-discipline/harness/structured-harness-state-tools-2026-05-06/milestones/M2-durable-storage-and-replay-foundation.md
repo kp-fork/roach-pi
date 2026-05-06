@@ -1,7 +1,7 @@
 # Milestone: Durable Storage and Replay Foundation
 
 **ID:** M2
-**Status:** pending
+**Status:** completed
 **Dependencies:** M1
 **Risk:** High
 **Effort:** Large

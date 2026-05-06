@@ -1,7 +1,7 @@
 # Long Run State: Structured Harness State Tools Migration
 
 **Created:** 2026-05-06 18:00
-**Last Updated:** 2026-05-06 19:22
+**Last Updated:** 2026-05-06 19:25
 **Status:** executing
 
 **Context Brief:** docs/engineering-discipline/context/2026-05-06-structured-harness-state-tools-brief.md
@@ -16,7 +16,7 @@
 | ID | Name | Status | Attempts | Dependencies | Plan File | Review File |
 |----|------|--------|----------|--------------|-----------|-------------|
 | M1 | State Kernel and Pure Renderers | completed | 1 | — | docs/engineering-discipline/plans/2026-05-06-m1-state-kernel-and-pure-renderers.md | docs/engineering-discipline/reviews/2026-05-06-m1-state-kernel-and-pure-renderers-review.md |
-| M2 | Durable Storage and Replay Foundation | validating | 1 | M1 | docs/engineering-discipline/plans/2026-05-06-m2-durable-storage-and-replay-foundation.md | — |
+| M2 | Durable Storage and Replay Foundation | completed | 1 | M1 | docs/engineering-discipline/plans/2026-05-06-m2-durable-storage-and-replay-foundation.md | docs/engineering-discipline/reviews/2026-05-06-m2-durable-storage-and-replay-foundation-review.md |
 | M3 | Structured Harness Tools | pending | 0 | M1, M2 | — | — |
 | M4 | Skill and Workflow Migration | pending | 0 | M3 | — | — |
 | M5 | Footer and Progress Cutover | pending | 0 | M3 | — | — |
@@ -63,3 +63,4 @@ Phase 7: M_final
 | 2026-05-06 19:12 | plan-written | M2 plan saved to docs/engineering-discipline/plans/2026-05-06-m2-durable-storage-and-replay-foundation.md |
 | 2026-05-06 19:12 | execution-started | M2 attempt 1 |
 | 2026-05-06 19:22 | review-started | M2 Durable Storage and Replay Foundation |
+| 2026-05-06 19:25 | review-passed | M2 independent review PASS; checkpoint written to docs/engineering-discipline/harness/structured-harness-state-tools-2026-05-06/checkpoints/M2-checkpoint.md |
