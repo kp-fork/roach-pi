@@ -5,6 +5,7 @@ import { basename } from "path";
 import { PLAN_PROGRESS_SPINNER_MS, type PlanProgressTracker } from "./plan-progress.js";
 import type { MilestoneTracker } from "./milestone-tracker.js";
 import type { FooterPresetName } from "./ui-settings.js";
+import type { HarnessProgressProvider } from "./harness-progress.js";
 
 // Types
 
@@ -191,9 +192,11 @@ export class RoachFooter implements Component {
   private planProgress: PlanProgressTracker | null;
   private tui: Pick<TUI, "requestRender"> | null;
   private milestoneTracker: MilestoneTracker | null;
+  private harnessProgress: HarnessProgressProvider | null;
   private preset: FooterPresetName;
   private unsubscribePlanProgress: (() => void) | null = null;
   private unsubscribeMilestone: (() => void) | null = null;
+  private unsubscribeHarnessProgress: (() => void) | null = null;
   private spinnerTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
@@ -205,6 +208,7 @@ export class RoachFooter implements Component {
     planProgress: PlanProgressTracker | null = null,
     tui: Pick<TUI, "requestRender"> | null = null,
     milestoneTracker: MilestoneTracker | null = null,
+    harnessProgress: HarnessProgressProvider | null = null,
     options: FooterOptions = {},
   ) {
     this.theme = theme;
@@ -214,10 +218,12 @@ export class RoachFooter implements Component {
     this.activeTools = activeTools;
     this.planProgress = planProgress;
     this.milestoneTracker = milestoneTracker;
+    this.harnessProgress = harnessProgress;
     this.preset = options.preset ?? "default";
     this.tui = tui;
     this.unsubscribePlanProgress = this.planProgress?.subscribeOnChange(() => this.schedulePlanRender()) ?? null;
     this.unsubscribeMilestone = this.milestoneTracker?.subscribeOnChange(() => this.schedulePlanRender()) ?? null;
+    this.unsubscribeHarnessProgress = this.harnessProgress?.subscribeOnChange(() => this.schedulePlanRender()) ?? null;
     this.updateSpinnerTimer();
   }
 
@@ -227,6 +233,7 @@ export class RoachFooter implements Component {
     if (this.spinnerTimer) { clearInterval(this.spinnerTimer); this.spinnerTimer = null; }
     this.unsubscribePlanProgress?.(); this.unsubscribePlanProgress = null;
     this.unsubscribeMilestone?.(); this.unsubscribeMilestone = null;
+    this.unsubscribeHarnessProgress?.(); this.unsubscribeHarnessProgress = null;
   }
 
   private schedulePlanRender() {
@@ -235,7 +242,8 @@ export class RoachFooter implements Component {
   }
 
   private updateSpinnerTimer() {
-    const has = (this.planProgress?.getProgress().running ?? 0) > 0;
+    const has = (this.harnessProgress?.hasState() && this.harnessProgress?.hasRunningTasks())
+      || (this.planProgress?.getProgress().running ?? 0) > 0;
     if (has && !this.spinnerTimer) {
       this.spinnerTimer = setInterval(() => {
         if ((this.planProgress?.getProgress().running ?? 0) === 0) { this.updateSpinnerTimer(); return; }
@@ -251,18 +259,28 @@ export class RoachFooter implements Component {
     const normalLines = this.renderNormalFooter(width);
     const border = normalLines[0];
 
-    const hasMilestones = this.milestoneTracker?.hasMilestones() ?? false;
-    const hasPlan = this.planProgress?.hasPlan() ?? false;
+    const hasStructuredMilestones = this.harnessProgress?.hasState() ?? false;
+    const hasStructuredPlan = this.harnessProgress?.hasState() ?? false;
+    const hasMilestones = hasStructuredMilestones || (this.milestoneTracker?.hasMilestones() ?? false);
+    const hasPlan = hasStructuredPlan || (this.planProgress?.hasPlan() ?? false);
 
     if (hasMilestones || hasPlan) {
       const lines: string[] = [border];
       const pw = Math.max(0, width - 4);
-      if (this.milestoneTracker && hasMilestones) {
-        lines.push(...this.milestoneTracker.render(this.theme, pw).map((l) => fitLine(l, width)));
+      if (hasMilestones) {
+        if (this.harnessProgress?.hasState()) {
+          lines.push(...this.harnessProgress.renderMilestones(this.theme, pw).map((l) => fitLine(l, width)));
+        } else if (this.milestoneTracker) {
+          lines.push(...this.milestoneTracker.render(this.theme, pw).map((l) => fitLine(l, width)));
+        }
         if (hasPlan) lines.push(fitLine(this.theme.fg("dim", "  ·"), width));
       }
-      if (this.planProgress && hasPlan) {
-        lines.push(...this.planProgress.render(this.theme, pw).map((l) => fitLine(l, width)));
+      if (hasPlan) {
+        if (this.harnessProgress?.hasState()) {
+          lines.push(...this.harnessProgress.renderPlan(this.theme, pw).map((l) => fitLine(l, width)));
+        } else if (this.planProgress) {
+          lines.push(...this.planProgress.render(this.theme, pw).map((l) => fitLine(l, width)));
+        }
       }
       lines.push(...normalLines);
       return lines;

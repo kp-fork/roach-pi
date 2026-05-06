@@ -9,6 +9,7 @@ The agent dynamically generates questions, selects reviewers, and drives workflo
 - **`/clarify`**: The agent asks dynamic, context-aware questions one at a time to resolve ambiguity. It generates questions and choices on the fly based on your request, while exploring the codebase in parallel. Ends with a structured Context Brief.
 - **`/plan`**: Delegates to the agent in strict agentic-plan-crafting mode, ensuring executable implementation plans with no placeholders.
 - **`/ultraplan`**: The agent dynamically decides which reviewer perspectives are needed for your specific problem, dispatches them in parallel, and synthesizes findings into a milestone DAG.
+- **Structured progress tracking**: Milestones, plan tasks, and todos are tracked through durable structured state instead of markdown parsing. The footer shows live task lifecycle transitions (`running` → `completed`/`failed`) and restores progress from structured session replay events.
 - **`/ask`**: Manual test command for the `ask_user_question` tool.
 - **`/reset-phase`**: Resets the workflow phase to idle (useful if you want to exit clarify/plan/ultraplan mode manually).
 - **`ask_user_question` tool**: Registered as an LLM tool that the agent calls autonomously whenever it encounters ambiguity — not just during `/clarify`.

@@ -20,6 +20,7 @@ Long-running execution must be **resumable, auditable, and fail-safe.** Every st
 5. **User confirmation required at gate points.** Before starting a new milestone phase (planning, execution, review), check if the user wants to continue, pause, or abort.
 6. **Never modify completed milestones.** Once a milestone passes agentic-review-work, its files are locked. If a later milestone needs changes to earlier work, that is a new milestone.
 7. **Checkpoint after every milestone completion.** Write a checkpoint file recording what was done, test results, and review verdict before proceeding.
+8. **Do not execute plan tasks directly as the main agent.** In long-run mode, the main agent is an orchestrator only. Plan task implementation must go through `agentic-run-plan` / worker-validator flow, and structured task progress must be persisted with `harness_plan set_task_status`.
 
 ## When To Use
 
@@ -102,8 +103,8 @@ Before starting a milestone:
 
 1. Verify all dependency milestones have status `completed`
 2. Verify no file conflicts with in-progress parallel milestones
-3. Update state.md: set milestone status to `planning`
-4. Update execution log with timestamp
+3. Update canonical structured state via `harness_milestone set_status`: set milestone status to `planning`
+4. Render/update the human-readable execution log after the structured update
 
 #### Step 2-2: Plan Crafting Phase
 
@@ -122,32 +123,51 @@ Before starting a milestone:
    - Create a plan document at `docs/engineering-discipline/plans/YYYY-MM-DD-<milestone-name>.md`
    - The plan must satisfy all milestone success criteria
    - The plan must not modify files outside the milestone's scope
-3. Update state.md: record plan file path for this milestone
+3. Prepare to record the plan file path in canonical structured state after user approval
 4. **User gate:** Present the plan and ask for approval before execution
+5. After approval, attach the plan to the milestone via `harness_plan`:
+   ```json
+   { "runId": "<run-id>", "action": "attach", "planId": "<plan-id>", "milestoneId": "M1", "title": "...", "goal": "...", "planFile": "docs/.../plan.md" }
+   ```
+6. Define every task from the approved plan via `harness_plan define_tasks` before execution begins:
+   ```json
+   { "runId": "<run-id>", "action": "define_tasks", "planId": "<plan-id>", "tasks": [{ "id": 1, "name": "...", "status": "pending" }] }
+   ```
 
 #### Step 2-3: Run Plan Phase
 
-1. Update state.md: set milestone status to `executing`, increment `Attempts` counter by 1
+1. Update canonical structured state via `harness_milestone update` / `set_status`: set milestone status to `executing`, increment `Attempts` counter by 1
 2. Execute the plan using the `agentic-run-plan` skill pattern:
    - Worker-validator loop for each task
    - Parallel execution for independent tasks
    - Information-isolated validators
+   - The main agent must not edit/write/bash implementation files directly for plan tasks
+   - After every task PASS/FAIL, persist structured status with `harness_plan set_task_status`
 3. If agentic-run-plan reports failure after 3 retries on any task:
-   - Update state.md: set milestone status to `failed`
+   - Update canonical structured state via `harness_milestone set_status`: set milestone status to `failed`
    - Record failure details in execution log
    - **Stop and report to user.** Do not proceed to dependent milestones.
 4. If all tasks complete: proceed to review phase
 
+   **Update milestone status via structured tools instead of editing `state.md` tables:**
+   ```json
+   { "runId": "<run-id>", "action": "set_status", "id": "M1", "status": "executing" }
+   ```
+
 #### Step 2-4: Review Work Phase
 
-1. Update state.md: set milestone status to `validating`
+1. Update canonical structured state via `harness_milestone set_status`: set milestone status to `validating`
 2. Invoke the `agentic-review-work` skill pattern:
    - Information-isolated review against the plan document
    - Binary PASS/FAIL verdict
 3. **If PASS:**
-   - Update state.md: set milestone status to `completed`
+   - Update canonical structured state via `harness_milestone set_status`: set milestone status to `completed`
    - Write checkpoint file (see Checkpoint Format below)
    - Update execution log
+   - Set final status via `harness_milestone`:
+     ```json
+     { "runId": "<run-id>", "action": "set_status", "id": "M1", "status": "completed" }
+     ```
    - Proceed to next milestone
 4. **If FAIL:**
    - Record review findings in execution log
@@ -214,6 +234,12 @@ Write `checkpoints/M<N>-checkpoint.md`:
 ## State After Milestone
 [Brief description of system state — what works now that didn't before]
 ```
+
+6. Render the current state for human readability via `harness_milestone`:
+   ```json
+   { "runId": "<run-id>", "action": "render" }
+   ```
+   This produces markdown output from structured state. Do not treat the markdown as editable source of truth.
 
 ### Phase 3: Parallel Milestone Execution
 
@@ -316,8 +342,8 @@ If execution reveals that a completed milestone's output is incorrect or a new m
 
 When a user chooses to skip a failed milestone:
 
-1. Set milestone status to `skipped` in state.md
-2. Log the skip event with user's reason in execution log
+1. Set milestone status to `skipped` via `harness_milestone set_status`
+2. Log the skip event with user's reason in execution log after the structured update
 3. **Dependents of a skipped milestone are also blocked by default** — same as `failed`. The DAG contract is: dependents run only after prerequisites are `completed`.
 4. The user may explicitly unblock a dependent by acknowledging the missing prerequisite: "Proceed with M4 despite M2 being skipped." Log this override in the execution log.
 5. If the user unblocks a dependent, add a note to that milestone's Context Brief during agentic-plan-crafting: "Prerequisite M2 was skipped. The following outputs are missing: [list from M2's success criteria]."
@@ -331,6 +357,10 @@ If a single milestone's total active time (from planning start to review complet
 1. **Soft limit:** If a milestone has been in `planning` or `executing` status for more than what appears to be a proportionally large share of the overall work, pause and report to user: "Milestone M3 has been in progress for an extended period. Continue, re-scope, or abort?"
 2. **Hard limit on attempts:** The 3-attempt limit (F1) bounds retry loops. But if even a single attempt's agentic-plan-crafting generates more than 15 tasks, pause and report: "This milestone's plan has N tasks — it may be too large for a single milestone. Consider splitting."
 3. **Purpose:** Prevent a single runaway milestone from consuming the entire execution budget or running indefinitely on flaky tests.
+
+## Structured State vs Markdown
+
+`state.md`, milestone markdown files, and plan markdown files are rendered views of the canonical structured state stored in `state.json`. Agents must update progress through `harness_milestone`, `harness_plan`, and `harness_todo` tools. Editing markdown files directly bypasses the structured state and will be overwritten on the next render.
 
 ## Context Window Management
 

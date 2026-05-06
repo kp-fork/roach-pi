@@ -21,7 +21,8 @@ import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-age
 import { complete } from "@mariozechner/pi-ai";
 import { isDisciplineAgent, augmentAgentWithKarpathy } from "./discipline.js";
 import { PlanProgressTracker } from "./plan-progress.js";
-import { MilestoneTracker, extractMilestoneId, isCompletionFilePath } from "./milestone-tracker.js";
+import { MilestoneTracker, extractMilestoneId } from "./milestone-tracker.js";
+import { isCompletionFilePath } from "./legacy-import-markdown.js";
 import type { MilestoneStatus } from "./milestone-tracker.js";
 import { WorkingVisibilityController } from "./working-visibility.js";
 import {
@@ -39,13 +40,25 @@ import {
   reloadPlanFromSubagentArgs,
   startPlanSubagentTasks,
   subagentItemRecords,
-} from "./plan-progress-events.js";
+} from "./legacy-import-markdown.js";
+import {
+  defaultHarnessStateRoot,
+  harnessStateSnapshotPath,
+  readHarnessStateSnapshot,
+  writeHarnessStateSnapshot,
+  createHarnessStateSnapshot,
+} from "./harness-storage.js";
+import { replayHarnessEvents, HARNESS_STATE_EVENT_CUSTOM_TYPE } from "./harness-events.js";
+import { createHarnessState } from "./harness-state.js";
 import { fetchUrlToMarkdown } from "./webfetch/utils.js";
 import { PI_ENABLE_TEAM_MODE_ENV, PI_TEAM_WORKER_ENV, cleanupActiveTeamTmuxResources, formatTeamRunSummary, runTeam, type TeamBackend, type TeamRunSummary } from "./team.js";
 import { defaultTeamRunStateRoot, listTeamRuns, readTeamRunRecord, writeTeamRunRecord, type StaleTaskResumeMode } from "./team-state.js";
 import { getDefaultRegistry } from "./async-registry.js";
 import { buildTeamCommandPrompt, getTeamArgumentCompletions, isTeamFollowUpCommand, parseTeamArgs } from "./team-command.js";
 import { renderWebfetchCall, renderWebfetchResult } from "./webfetch/render.js";
+import { registerHarnessTools } from "./harness-tools.js";
+import { HarnessProgressProvider } from "./harness-progress.js";
+import { applyStructuredPlanTaskStatusUpdates, selectStructuredPlanForPaths } from "./harness-runtime-progress.js";
 import { getDefaultApprovalStore } from "./sandbox/approval-store.js";
 import { parseSandboxApprovalMode } from "./sandbox/approval-mode.js";
 import { createSandboxedBashOperations } from "./sandbox/bash-operations.js";
@@ -159,6 +172,7 @@ const planTaskIdsByToolCallId = new Map<string, number[]>();
 
 const sessionPlanPaths = new Set<string>();
 let workingVisibility: WorkingVisibilityController | null = null;
+let harnessProgress: HarnessProgressProvider | null = null;
 
 type StringEnumSchema<T extends string> = TUnsafe<T> & {
   type: "string";
@@ -1038,10 +1052,13 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
+  registerHarnessTools(pi);
+
   pi.on("session_shutdown", async (_event, _ctx) => {
     workingVisibility?.restore();
     workingVisibility = null;
     sessionPlanPaths.clear();
+    harnessProgress = null;
     getDefaultRegistry().abortAll();
     await cleanupActiveTeamTmuxResources();
   });
@@ -1309,30 +1326,48 @@ Do not start multi-step implementation without a clear understanding of what the
   pi.on("tool_result", async (event, ctx) => {
     const toolName = event.toolName;
 
-    // Preserve the current plan if the result is a write confirmation or non-plan text.
-    if (toolName === "read" || toolName === "write") {
-      await loadPlanFromToolResultEvent(planProgress, {
-        toolName,
-        input: event.input as Record<string, unknown> | undefined,
-        content: event.content,
-      }, ctx.cwd, sessionPlanPaths);
+    // LEGACY PATH — parser-derived plan/milestone loading.
+    // Skip when structured state exists; harness tools handle updates directly.
+    if (!harnessProgress?.hasState()) {
+      if (toolName === "read" || toolName === "write") {
+        await loadPlanFromToolResultEvent(planProgress, {
+          toolName,
+          input: event.input as Record<string, unknown> | undefined,
+          content: event.content,
+        }, ctx.cwd, sessionPlanPaths);
+      }
+
+      if (toolName === "read" || toolName === "write" || toolName === "edit") {
+        const detected = await detectMilestonesFromToolResult(milestoneTracker, {
+          toolName,
+          input: event.input as Record<string, unknown> | undefined,
+          content: event.content,
+        }, ctx.cwd);
+        const input = event.input as Record<string, unknown> | undefined;
+        const filePath = typeof input?.path === "string"
+          ? input.path
+          : typeof input?.file_path === "string"
+            ? input.file_path
+            : "";
+        if (detected && isCompletionFilePath(filePath)) {
+          planProgress.clear();
+          persistProgressSnapshot(ctx);
+        }
+      }
     }
 
-    if (toolName === "read" || toolName === "write" || toolName === "edit") {
-      const detected = await detectMilestonesFromToolResult(milestoneTracker, {
-        toolName,
-        input: event.input as Record<string, unknown> | undefined,
-        content: event.content,
-      }, ctx.cwd);
+    if (toolName === "harness_milestone" || toolName === "harness_plan" || toolName === "harness_todo") {
       const input = event.input as Record<string, unknown> | undefined;
-      const filePath = typeof input?.path === "string"
-        ? input.path
-        : typeof input?.file_path === "string"
-          ? input.file_path
-          : "";
-      if (detected && isCompletionFilePath(filePath)) {
-        planProgress.clear();
-        persistProgressSnapshot(ctx);
+      const runId = typeof input?.runId === "string" ? input.runId : undefined;
+      if (runId) {
+        if (!harnessProgress) {
+          harnessProgress = new HarnessProgressProvider();
+        }
+        if (!harnessProgress.hasState()) {
+          harnessProgress.setRunId(runId);
+        } else {
+          harnessProgress.invalidate();
+        }
       }
     }
 
@@ -1825,6 +1860,44 @@ Do not start multi-step implementation without a clear understanding of what the
     },
   });
 
+  async function persistStructuredSubagentTaskStatuses(
+    ctx: any,
+    args: unknown,
+    taskIds: number[],
+    status: "running" | "completed" | "failed",
+  ): Promise<void> {
+    if (taskIds.length === 0 || !harnessProgress?.hasState()) return;
+
+    const rootDir = defaultHarnessStateRoot(ctx.cwd);
+    const branchEntries = ctx.sessionManager?.getBranch?.() ?? [];
+    let runId: string | undefined;
+    for (const entry of branchEntries) {
+      if (entry?.type === "custom" && entry?.customType === HARNESS_STATE_EVENT_CUSTOM_TYPE && entry?.data) {
+        runId = (entry.data as any).runId;
+        break;
+      }
+    }
+    if (!runId) return;
+
+    const snapshotPath = harnessStateSnapshotPath(rootDir, runId);
+    const snapshot = await readHarnessStateSnapshot(snapshotPath);
+    if (!snapshot) return;
+
+    const activePlan = selectStructuredPlanForPaths(snapshot.state, extractPlanPathsFromArgs(args));
+    if (!activePlan) return;
+
+    const result = applyStructuredPlanTaskStatusUpdates(snapshot.state, {
+      planId: activePlan.id,
+      taskIds,
+      status,
+    });
+    await writeHarnessStateSnapshot(snapshotPath, createHarnessStateSnapshot(result.state));
+    for (const replayEvent of result.events) {
+      (ctx.sessionManager as any)?.appendCustomEntry?.(HARNESS_STATE_EVENT_CUSTOM_TYPE, replayEvent);
+    }
+    harnessProgress.invalidate();
+  }
+
   pi.on("message_end", async (event, ctx) => {
     const msg = event.message;
     if (msg.role === "assistant") {
@@ -1835,8 +1908,12 @@ Do not start multi-step implementation without a clear understanding of what the
       }
     }
 
-    await loadPlanFromAssistantMessageEnd(planProgress, event, ctx.cwd, sessionPlanPaths);
-    loadMilestonesFromAssistantMessage(milestoneTracker, event);
+    // LEGACY PATH — parser-derived plan/milestone loading from assistant prose.
+    // Skip when structured state exists; harness tools handle updates directly.
+    if (!harnessProgress?.hasState()) {
+      await loadPlanFromAssistantMessageEnd(planProgress, event, ctx.cwd, sessionPlanPaths);
+      loadMilestonesFromAssistantMessage(milestoneTracker, event);
+    }
   });
 
   pi.on("tool_execution_start", async (event, ctx) => {
@@ -1850,6 +1927,7 @@ Do not start multi-step implementation without a clear understanding of what the
         const matchedTaskIds = startPlanSubagentTasks(planProgress, args);
         if (matchedTaskIds.length > 0) {
           planTaskIdsByToolCallId.set(event.toolCallId, matchedTaskIds);
+          await persistStructuredSubagentTaskStatuses(ctx, args, matchedTaskIds, "running");
         }
 
         const startedMilestones = startMilestonesFromSubagentArgs(milestoneTracker, args);
@@ -1870,6 +1948,10 @@ Do not start multi-step implementation without a clear understanding of what the
         const affectedTaskIds = completePlanSubagentTasks(planProgress, args, !(event.isError ?? false), matchedTaskIds);
         if (affectedTaskIds.length > 0) {
           persistProgressSnapshot(ctx);
+
+          // Runtime enforcement: also persist to structured state.
+          const taskStatus = !(event.isError ?? false) ? "completed" : "failed";
+          await persistStructuredSubagentTaskStatuses(ctx, args, affectedTaskIds, taskStatus);
         }
 
         const success = !(event.isError ?? false);
@@ -1915,56 +1997,107 @@ Do not start multi-step implementation without a clear understanding of what the
     planProgress.clear();
     milestoneTracker.clear();
     const branchEntries = ctx.sessionManager?.getBranch?.() ?? [];
-    await reconstructPlanProgressFromSessionEntries(
-      planProgress,
-      branchEntries,
-      ctx.cwd,
-      sessionPlanPaths,
-    );
 
-    // Reconstruct milestone state: prefer live state.md over stale snapshot
-    type MilestoneSnapshot = { milestoneStatuses?: Array<{ id: string; status: MilestoneStatus }>; activeTasks?: Array<{ name: string; done: boolean }> | null; activeMilestoneId?: string | null };
-
-    let lastMilestoneSnapshot: MilestoneSnapshot | null = null;
+    // --- Structured-first session restore (M6) ---
+    // Detect structured state via HARNESS_STATE_EVENT_CUSTOM_TYPE entries.
+    // If structured state exists, use it as the primary restore path.
+    // Otherwise, fall back to legacy parser-derived reconstruction.
+    let structuredRunId: string | undefined;
     for (const entry of branchEntries) {
-      if (entry?.type === "custom" && entry?.customType === MILESTONE_PROGRESS_CUSTOM_TYPE && entry?.data) {
-        lastMilestoneSnapshot = entry.data as MilestoneSnapshot;
-      }
-    }
-
-    if (lastMilestoneSnapshot?.milestoneStatuses) {
-      for (const planPath of sessionPlanPaths) {
-        milestoneTracker.mergeFromPaths([planPath]);
-      }
-      milestoneTracker.restoreMilestoneStatuses(lastMilestoneSnapshot.milestoneStatuses as Array<{ id: string; status: MilestoneStatus }>);
-
-      if (lastMilestoneSnapshot.activeTasks && lastMilestoneSnapshot.activeMilestoneId) {
-        const target = milestoneTracker.getMilestone(lastMilestoneSnapshot.activeMilestoneId);
-        if (target) {
-          target.tasks = lastMilestoneSnapshot.activeTasks;
+      if (entry?.type === "custom" && entry?.customType === HARNESS_STATE_EVENT_CUSTOM_TYPE && entry?.data) {
+        const data = entry.data as { runId?: string };
+        if (data.runId) {
+          structuredRunId = data.runId;
+          break;
         }
       }
     }
 
-    if (!milestoneTracker.hasMilestones()) {
-      for (const planPath of sessionPlanPaths) {
-        milestoneTracker.mergeFromPaths([planPath]);
+    if (structuredRunId) {
+      // Primary path: load snapshot + replay structured events
+      const rootDir = defaultHarnessStateRoot(ctx.cwd);
+      const snapshot = await readHarnessStateSnapshot(harnessStateSnapshotPath(rootDir, structuredRunId));
+      const events = branchEntries
+        .filter((e: any) => e?.type === "custom" && e?.customType === HARNESS_STATE_EVENT_CUSTOM_TYPE)
+        .map((e: any) => e.data)
+        .filter((d: any) => d && typeof d === "object");
+      const reconstructedState = replayHarnessEvents(
+        snapshot?.state ?? createHarnessState({ runId: structuredRunId, title: structuredRunId }),
+        events,
+      );
+
+      // Populate milestone tracker from structured state
+      if (reconstructedState.milestones.length > 0) {
+        milestoneTracker.loadMilestones(
+          reconstructedState.milestones.map((m) => ({ id: m.id, name: m.name })),
+        );
+        milestoneTracker.restoreMilestoneStatuses(
+          reconstructedState.milestones.map((m) => ({ id: m.id, status: m.status })),
+        );
+      }
+
+      // Populate plan tracker from structured state if a plan exists
+      const activePlan = reconstructedState.plans[0];
+      if (activePlan && activePlan.tasks.length > 0) {
+        // Load plan markdown if available for display
+        if (activePlan.planFile) {
+          sessionPlanPaths.add(activePlan.planFile);
+          try {
+            const planContent = await readFile(activePlan.planFile, "utf-8");
+            planProgress.loadPlan(planContent);
+          } catch { /* plan file not found, skip */ }
+        }
+        planProgress.restoreTaskStatuses(
+          activePlan.tasks.map((t) => ({ id: t.id, status: t.status === "skipped" ? "failed" : t.status })),
+        );
+      }
+    } else {
+      // LEGACY PATH — parser-derived reconstruction for pre-structured sessions
+      await reconstructPlanProgressFromSessionEntries(
+        planProgress,
+        branchEntries,
+        ctx.cwd,
+        sessionPlanPaths,
+      );
+
+      type MilestoneSnapshot = { milestoneStatuses?: Array<{ id: string; status: MilestoneStatus }>; activeTasks?: Array<{ name: string; done: boolean }> | null; activeMilestoneId?: string | null };
+
+      let lastMilestoneSnapshot: MilestoneSnapshot | null = null;
+      for (const entry of branchEntries) {
+        if (entry?.type === "custom" && entry?.customType === MILESTONE_PROGRESS_CUSTOM_TYPE && entry?.data) {
+          lastMilestoneSnapshot = entry.data as MilestoneSnapshot;
+        }
+      }
+
+      if (lastMilestoneSnapshot?.milestoneStatuses) {
+        for (const planPath of sessionPlanPaths) {
+          milestoneTracker.mergeFromPaths([planPath]);
+        }
+        milestoneTracker.restoreMilestoneStatuses(lastMilestoneSnapshot.milestoneStatuses as Array<{ id: string; status: MilestoneStatus }>);
+
+        if (lastMilestoneSnapshot.activeTasks && lastMilestoneSnapshot.activeMilestoneId) {
+          const target = milestoneTracker.getMilestone(lastMilestoneSnapshot.activeMilestoneId);
+          if (target) {
+            target.tasks = lastMilestoneSnapshot.activeTasks;
+          }
+        }
+      }
+
+      if (!milestoneTracker.hasMilestones()) {
+        for (const planPath of sessionPlanPaths) {
+          milestoneTracker.mergeFromPaths([planPath]);
+        }
+      }
+
+      const milestoneReplay = await reconstructMilestoneProgressFromSessionEntries(
+        milestoneTracker,
+        branchEntries,
+        ctx.cwd,
+      );
+      if (milestoneReplay.sawCompletion) {
+        planProgress.clear();
       }
     }
-
-    // Replay milestone-bearing history after snapshots so explicit state.md/completion.md
-    // writes in the current branch override stale custom entries from before reload.
-    const milestoneReplay = await reconstructMilestoneProgressFromSessionEntries(
-      milestoneTracker,
-      branchEntries,
-      ctx.cwd,
-    );
-    if (milestoneReplay.sawCompletion) {
-      planProgress.clear();
-    }
-
-    // We do NOT scan the filesystem here to avoid picking up
-    // state.md/completion.md from OTHER harness sessions.
 
     workingVisibility?.restore();
     workingVisibility = new WorkingVisibilityController(
@@ -1976,6 +2109,18 @@ Do not start multi-step implementation without a clear understanding of what the
     showWelcomeHeader(ctx.ui);
 
     const uiSettings = resolveAgenticUiSettings({ cwd: ctx.cwd });
+
+    harnessProgress = new HarnessProgressProvider();
+    for (const entry of branchEntries) {
+      if (entry?.type === "custom" && entry?.customType === HARNESS_STATE_EVENT_CUSTOM_TYPE && entry?.data) {
+        const data = entry.data as { runId?: string };
+        if (data.runId) {
+          harnessProgress.setRunId(data.runId);
+          break;
+        }
+      }
+    }
+
     ctx.ui.setFooter((tui, theme, footerData) => {
       let gitStats: GitStats = { ahead: 0, behind: 0, dirty: 0, untracked: 0 };
 
@@ -1995,7 +2140,7 @@ Do not start multi-step implementation without a clear understanding of what the
         getGitStats: () => gitStats,
         getThinkingLevel: () => undefined,
         getModelInfo: () => getModelInfo(ctx),
-      }, cacheStats, activeTools, planProgress, tui, milestoneTracker, {
+      }, cacheStats, activeTools, planProgress, tui, milestoneTracker, harnessProgress, {
         preset: uiSettings.footerPreset,
       });
 

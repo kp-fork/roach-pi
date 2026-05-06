@@ -53,7 +53,7 @@ It is intentionally inspectable: commands, tools, hooks, agents, and skills are 
 - `/clarify` asks one context-aware question at a time and explores the codebase in parallel.
 - `/plan` turns the clarified scope into a concrete implementation plan.
 - Plan execution uses a compliance → worker → validator loop, so implementation and verification stay separated.
-- Progress snapshots and footer status make long-running plans easier to recover and audit.
+- Structured progress tracking records milestones, plan tasks, and todos as durable state; the footer now reflects live `running` → `completed`/`failed` task transitions and can restore progress from structured session replay events.
 
 ### Subagents and review fleets
 

@@ -227,6 +227,11 @@ git commit -m "feat: add specific feature"
 ```
 ````
 
+**Tracking plan progress:** After defining tasks in a plan document, register them with the harness via `harness_plan`:
+```json
+{ "runId": "<run-id>", "action": "define_tasks", "planId": "<plan-id>", "tasks": [{"id":1,"name":"Task Name","files":["src/file.ts"],"testCommands":["npm test"],"acceptanceCriteria":["passes"]}] }
+```
+
 ### Final Verification Task
 
 Every plan must end with a **Final Verification Task** that runs the discovered highest-level verification. This is always the last task, depends on all other tasks, and cannot be parallelized.
@@ -256,6 +261,11 @@ Expected: No regressions — all pre-existing tests still pass
 ````
 
 **If the final verification fails**, the plan is not complete. The worker-validator loop in `agentic-run-plan` will handle failure response (see agentic-run-plan's E2E Failure Response Protocol).
+
+After all tasks complete, update the plan's final status through `harness_plan` rather than editing markdown checkboxes:
+```json
+{ "runId": "<run-id>", "action": "set_task_status", "planId": "<plan-id>", "taskId": 1, "status": "completed" }
+```
 
 ## No Placeholders
 

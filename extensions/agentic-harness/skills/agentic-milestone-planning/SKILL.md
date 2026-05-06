@@ -442,6 +442,11 @@ Attempts: number of plan-execute-review cycles attempted (incremented at each St
 | YYYY-MM-DD HH:MM | milestones-locked | N milestones approved by user |
 ```
 
+**Structured state initialization:** After creating milestone definitions, initialize the canonical structured state via `harness_milestone`:
+```json
+{ "runId": "<run-id>", "action": "create", "id": "M1", "name": "Milestone Name", "status": "pending", "dependencies": [] }
+```
+
 **Individual milestone file (M1-<name>.md) format:**
 
 ```markdown

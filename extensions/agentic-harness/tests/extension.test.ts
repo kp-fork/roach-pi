@@ -872,6 +872,47 @@ describe("webfetch Tool", () => {
   });
 });;
 
+describe("Harness Tools", () => {
+  it("should register harness_milestone, harness_plan, and harness_todo", () => {
+    const { mockPi, tools } = createMockPi();
+    extension(mockPi);
+
+    expect(tools.get("harness_milestone")).toBeDefined();
+    expect(tools.get("harness_plan")).toBeDefined();
+    expect(tools.get("harness_todo")).toBeDefined();
+  });
+
+  it("should have runId and action as required on harness_milestone", () => {
+    const { mockPi, tools } = createMockPi();
+    extension(mockPi);
+
+    const schema = tools.get("harness_milestone")!.parameters;
+    expect(schema.required).toContain("runId");
+    expect(schema.required).toContain("action");
+    expect(schema.properties.action.enum).toEqual([
+      "create", "update", "set_status", "load", "render",
+    ]);
+  });
+
+  it("should have runId and action as required on harness_plan", () => {
+    const { mockPi, tools } = createMockPi();
+    extension(mockPi);
+
+    const schema = tools.get("harness_plan")!.parameters;
+    expect(schema.required).toContain("runId");
+    expect(schema.required).toContain("action");
+  });
+
+  it("should have runId and action as required on harness_todo", () => {
+    const { mockPi, tools } = createMockPi();
+    extension(mockPi);
+
+    const schema = tools.get("harness_todo")!.parameters;
+    expect(schema.required).toContain("runId");
+    expect(schema.required).toContain("action");
+  });
+});
+
 describe("tool_result Phase Auto-Reset", () => {
   it("should reset currentPhase to idle when the phase's terminal artifact is written", async () => {
     const { mockPi, events, commands } = createMockPi();

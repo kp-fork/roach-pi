@@ -185,6 +185,21 @@ Report your verdict as PASS or FAIL.
 - **Pass:** Mark the task as completed and move to the next task
 - **Fail:** Deliver the validator's feedback to the worker and return to step 2-2 for re-implementation. The feedback is the validator's own assessment — do not augment it with the main agent's interpretation.
 
+**2-4. Task Status Update (MANDATORY)**
+
+After the validator passes, you **MUST** update the structured plan state via `harness_plan`. Do not skip this step — it is what drives the footer progress display and session restore.
+
+```json
+{ "runId": "<run-id>", "action": "set_task_status", "planId": "<plan-id>", "taskId": 1, "status": "completed" }
+```
+
+For failed tasks:
+```json
+{ "runId": "<run-id>", "action": "set_task_status", "planId": "<plan-id>", "taskId": 1, "status": "failed" }
+```
+
+If you do not have a `runId`, use `harness_milestone load` or `harness_plan load` to discover the current state.
+
 **Retry limit:** If the same task fails 3 consecutive times, report the situation to the user and request intervention.
 
 **Parallel Execution Rules (Hard Gate #4):**
@@ -204,6 +219,23 @@ When running in parallel:
 Sequential execution required for:
 - Tasks with explicit dependencies (run after predecessor completes)
 - Tasks modifying the same file (must run sequentially)
+
+### Structured Plan State Updates
+
+When executing a plan through the harness, prefer updating plan progress via the `harness_plan` tool rather than editing plan markdown files directly.
+
+**After completing a task:**
+```json
+{ "runId": "<run-id>", "action": "set_task_status", "planId": "<plan-id>", "taskId": 1, "status": "completed" }
+```
+
+**When the plan is first loaded:**
+```json
+{ "runId": "<run-id>", "action": "attach", "planId": "<plan-id>", "milestoneId": "M1", "title": "Plan Title", "goal": "Plan Goal" }
+{ "runId": "<run-id>", "action": "define_tasks", "planId": "<plan-id>", "tasks": [{"id":1,"name":"Task 1"}] }
+```
+
+Markdown plan files are rendered output only — they are not the canonical source of truth for runtime progress.
 
 ### Step 3: E2E Verification Gate
 

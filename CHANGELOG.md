@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Improvements
+
+* **harness:** improve plan progress tracking with structured milestone/plan/todo state, live `running` → `completed`/`failed` task transitions in the footer, session replay from structured custom events, and serialized same-run state mutations to avoid lost progress updates.
+
 ## [1.22.1](https://github.com/tmdgusya/roach-pi/compare/v1.22.0...v1.22.1) (2026-05-06)
 
 ### Bug Fixes

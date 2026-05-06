@@ -54,6 +54,7 @@ function createFooter(
     null,
     null,
     null,
+    null,
     { preset },
   );
 }
@@ -97,6 +98,9 @@ describe("RoachFooter Powerline styling", () => {
       },
       { totalInput: 100, totalCacheRead: 50 },
       { running: new Map() },
+      null,
+      null,
+      null,
     );
 
     const rendered = footer.render(100).join("\n");

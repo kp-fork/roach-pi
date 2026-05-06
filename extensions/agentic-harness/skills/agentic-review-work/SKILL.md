@@ -206,7 +206,10 @@ Self-check when review is complete:
 
 ## Transition
 
-After review is complete:
+After review is complete, update the milestone status through `harness_milestone` rather than editing markdown tables:
+```json
+{ "runId": "<run-id>", "action": "set_status", "id": "M1", "status": "completed" }
+```
 
 - **PASS** → Report results to the user and suggest next steps (PR creation, deployment, etc.)
 - **FAIL** → Report failure items to the user. If fixes are needed, suggest transitioning to the `agentic-run-plan` or `agentic-systematic-debugging` skill
