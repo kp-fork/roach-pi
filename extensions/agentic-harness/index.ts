@@ -11,7 +11,7 @@ import { join, dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { discoverAgents, type SubagentContextMode } from "./agents.js";
 import { runAgent, mapWithConcurrencyLimit, MAX_CONCURRENCY, MAX_PARALLEL_TASKS, resolveDepthConfig, getCycleViolations, spawnAsync } from "./subagent.js";
-import { emptyUsage, isResultError, isResultSuccess, getResultSummaryText, type AsyncDependency, type SingleResult, type SubagentDetails } from "./types.js";
+import { emptyUsage, isResultError, isResultSuccess, getResultSummaryText, type AsyncDependency, type AsyncRunRecord, type SingleResult, type SubagentDetails } from "./types.js";
 import { renderCall, renderResult } from "./render.js";
 import { parsePlan } from "./plan-parser.js";
 import { buildValidatorPrompt } from "./validator-template.js";
@@ -381,10 +381,10 @@ export default function (pi: ExtensionAPI) {
     asyncDependency: Type.Optional(stringEnum(["background", "needed-before-final"], {
       description: 'Agent-declared dependency for async:true runs. Use "needed-before-final" when the lead must wait for this answer before finalizing.',
     })),
-    action: Type.Optional(stringEnum(["status", "interrupt", "wait"], {
-      description: 'Run management action. "status" lists or inspects runs; "interrupt" stops a run; "wait" blocks until a run completes and returns its result.',
+    action: Type.Optional(stringEnum(["status", "interrupt", "wait", "mark-background"], {
+      description: 'Run management action. "status" lists or inspects runs; "interrupt" stops a run; "wait" blocks until a run completes and returns its result; "mark-background" explicitly marks a run as not needed for the final response.',
     })),
-    id: Type.Optional(Type.String({ description: "Run ID for status/interrupt/wait actions." })),
+    id: Type.Optional(Type.String({ description: "Run ID for status/interrupt/wait/mark-background actions." })),
     waitTimeoutMs: Type.Optional(Type.Number({ description: "Maximum milliseconds for action:\"wait\" before returning a timeout. Default 600000. Set 0 to wait indefinitely." })),
   });
 
@@ -432,12 +432,45 @@ export default function (pi: ExtensionAPI) {
     planTaskId?: number;
     async?: boolean;
     asyncDependency?: AsyncDependency;
-    action?: "status" | "interrupt" | "wait";
+    action?: "status" | "interrupt" | "wait" | "mark-background";
     id?: string;
     waitTimeoutMs?: number;
   };
 
   const makeDetails = (mode: "single" | "parallel") => (results: SingleResult[]): SubagentDetails => ({ mode, results });
+
+  const isAsyncRunBlockingFinal = (record: AsyncRunRecord): boolean =>
+    (record.status === "spawning" || record.status === "running") && record.dependency !== "background";
+
+  const formatAsyncGuardRun = (record: AsyncRunRecord): string => {
+    const elapsed = Math.round(record.progress.elapsedMs / 1000);
+    const dependency = record.dependency ?? "unclassified";
+    const task = record.task.replace(/\s+/g, " ").slice(0, 100);
+    return `- ${record.runId} [${record.status}/${dependency}] ${record.agent}: ${task}${record.task.length > 100 ? "..." : ""} (${elapsed}s)`;
+  };
+
+  const buildAsyncFinalGuardText = (records: AsyncRunRecord[]): string => [
+    "⛔ Async subagent final-response guard",
+    "",
+    "A final assistant response was blocked because async subagent runs are still active and have not been explicitly marked as background.",
+    "Before finalizing, choose one action for each run:",
+    "- `subagent` with `action:\"wait\"` and `id` to join and retrieve the result.",
+    "- `subagent` with `action:\"status\"` and `id` to inspect progress/result.",
+    "- `subagent` with `action:\"interrupt\"` and `id` to stop it.",
+    "- `subagent` with `action:\"mark-background\"` and `id` only if the final response does not depend on it.",
+    "",
+    "Active blocking async runs:",
+    ...records.map(formatAsyncGuardRun),
+  ].join("\n");
+
+  const hasToolCallContent = (message: any): boolean =>
+    Array.isArray(message?.content) && message.content.some((part: any) => part?.type === "toolCall");
+
+  const replaceAssistantMessageText = (message: any, text: string): any => ({
+    ...message,
+    content: [{ type: "text", text }],
+    stopReason: message?.stopReason === "toolUse" ? message.stopReason : "stop",
+  });
 
   const TeamParams = Type.Object({
     goal: Type.Optional(Type.String({ description: "Goal for the lightweight native team run. Omit only in follow-up command mode." })),
@@ -613,8 +646,8 @@ export default function (pi: ExtensionAPI) {
         "ONLY use these exact agent names — do NOT invent or guess agent names: explorer, worker, planner, plan-worker, plan-validator, plan-compliance, reviewer-feasibility, reviewer-architecture, reviewer-risk, reviewer-bug, reviewer-security, reviewer-performance, reviewer-test-coverage, reviewer-consistency, reviewer-verifier, review-synthesis.",
         "All agents use the default model. Do NOT specify or mention specific models (no Haiku, Sonnet, etc.).",
         "For codebase exploration: use 'explorer'. For general execution: use 'worker'. For plan execution: use 'plan-compliance' → 'plan-worker' → 'plan-validator'.",
-        "Use async:true only when the lead can safely continue. If the subagent answer is needed before the final response, set asyncDependency:'needed-before-final' and later call action:'wait' with the returned run id.",
-        "Use action:'wait' to join an async run and retrieve its completed result. Use action:'status' for inspection and action:'interrupt' to stop a running async run.",
+        "Use async:true only when the lead can safely continue. If the subagent answer is needed before the final response, set asyncDependency:'needed-before-final' and later call action:'wait' with the returned run id. Unclassified async runs also block final responses until resolved.",
+        "Use action:'wait' to join an async run and retrieve its completed result. Use action:'status' for inspection, action:'interrupt' to stop a running async run, and action:'mark-background' only when you explicitly choose to finalize without that run's result.",
         "For ultraplan milestone reviews: dispatch all 3 reviewers in parallel: reviewer-feasibility, reviewer-architecture, reviewer-risk.",
         "For ultrareview code reviews: dispatch 10 tasks in parallel (5 reviewers × 2 seeds): reviewer-bug, reviewer-security, reviewer-performance, reviewer-test-coverage, reviewer-consistency. Then run reviewer-verifier on the aggregated findings, then review-synthesis on the verified result.",
         "Max 12 parallel tasks with 10 concurrent. Chain mode stops on first error.",
@@ -717,6 +750,7 @@ export default function (pi: ExtensionAPI) {
                 record.progress.lastActivity ? `Last tool: ${record.progress.lastActivity.name}` : null,
                 `Tokens: in=${record.progress.usage.input} out=${record.progress.usage.output}`,
                 record.result ? `Exit code: ${record.result.exitCode}` : null,
+                record.result ? `Result:\n${getResultSummaryText(record.result, maxOutput)}` : null,
               ].filter(Boolean).join("\n");
               return {
                 content: [{ type: "text" as const, text: statusText }],
@@ -736,6 +770,28 @@ export default function (pi: ExtensionAPI) {
             return {
               content: [{ type: "text" as const, text: `Active runs (${runs.length}):\n${statusText}` }],
               details: undefined,
+            };
+          }
+          if (params.action === "mark-background") {
+            if (!params.id) {
+              return {
+                content: [{ type: "text" as const, text: "Error: mark-background action requires id parameter." }],
+                details: undefined,
+                isError: true,
+              };
+            }
+            const success = registry.setDependency(params.id, "background");
+            if (!success) {
+              return {
+                content: [{ type: "text" as const, text: `No run found with id: ${params.id}` }],
+                details: undefined,
+                isError: true,
+              };
+            }
+            const record = registry.getStatus(params.id);
+            return {
+              content: [{ type: "text" as const, text: `Run ${params.id} marked as background. It will no longer block final assistant responses.` }],
+              details: record ? { ...makeDetails("single")([]), asyncRun: record } : undefined,
             };
           }
           if (params.action === "interrupt") {
@@ -969,9 +1025,11 @@ export default function (pi: ExtensionAPI) {
               progress,
               contextMode: context,
             }, registry, params.asyncDependency);
-            const dependencyText = params.asyncDependency === "needed-before-final"
-              ? "\nDependency: needed-before-final. Call subagent action:\"wait\" with this run id before finalizing dependent work."
-              : "";
+            const dependencyText = params.asyncDependency === "background"
+              ? "\nDependency: background. This run will not block final assistant responses."
+              : params.asyncDependency === "needed-before-final"
+                ? "\nDependency: needed-before-final. Call subagent action:\"wait\" with this run id before finalizing dependent work."
+                : "\nDependency: unclassified. Final assistant responses will be blocked until this run completes, is interrupted, or is explicitly marked with action:\"mark-background\".";
             return {
               content: [{ type: "text" as const, text: `Async run started: ${runId}${dependencyText}` }],
               details: {
@@ -1228,7 +1286,12 @@ Do not start multi-step implementation without a clear understanding of what the
       delegationInfo = `\n\n## Delegation Guards\n- Current depth: ${depthConfig.currentDepth}, max: ${depthConfig.maxDepth}\n- Cycle prevention: ${depthConfig.preventCycles ? "enabled" : "disabled"}\n- Ancestor stack: ${depthConfig.ancestorStack.length > 0 ? depthConfig.ancestorStack.join(" -> ") : "(root)"}\n\n## Available Subagents\n${agentList}`;
     }
 
-    const combined = phaseGuidance + idleGuidance;
+    const blockingAsyncRuns = getDefaultRegistry().listActive().filter(isAsyncRunBlockingFinal);
+    const asyncGuidance = blockingAsyncRuns.length > 0
+      ? `\n\n## Active Async Subagent Guard\nYou have active async subagent runs that block final responses until resolved or explicitly marked as background. Before giving a final answer, call the subagent tool with action:\"wait\", action:\"status\", action:\"interrupt\", or action:\"mark-background\" for each blocking run.\n\n${blockingAsyncRuns.map(formatAsyncGuardRun).join("\n")}`
+      : "";
+
+    const combined = phaseGuidance + idleGuidance + asyncGuidance;
     if (!combined && !delegationInfo) return;
     return {
       systemPrompt: event.systemPrompt + combined + delegationInfo,
@@ -1959,6 +2022,22 @@ Do not start multi-step implementation without a clear understanding of what the
       if (usage) {
         cacheStats.totalInput += usage.input;
         cacheStats.totalCacheRead += usage.cacheRead;
+      }
+    }
+
+    if (
+      msg.role === "assistant" &&
+      msg.stopReason !== "toolUse" &&
+      !hasToolCallContent(msg)
+    ) {
+      const blockingAsyncRuns = getDefaultRegistry().listActive().filter(isAsyncRunBlockingFinal);
+      if (blockingAsyncRuns.length > 0) {
+        const guardText = buildAsyncFinalGuardText(blockingAsyncRuns);
+        pi.sendUserMessage(
+          `${guardText}\n\nContinue by explicitly choosing the next subagent action for each blocking run before finalizing.`,
+          { deliverAs: "followUp" },
+        );
+        return { message: replaceAssistantMessageText(msg, guardText) };
       }
     }
 

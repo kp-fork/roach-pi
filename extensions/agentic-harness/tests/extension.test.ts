@@ -832,7 +832,7 @@ describe("Validator Information Barrier", () => {
       type: "string",
       enum: ["background", "needed-before-final"],
     });
-    expect(schema.properties.action.enum).toEqual(["status", "interrupt", "wait"]);
+    expect(schema.properties.action.enum).toEqual(["status", "interrupt", "wait", "mark-background"]);
     expect(schema.properties.waitTimeoutMs).toBeDefined();
     expect(schema.properties.tasks.items.properties.planFile).toBeDefined();
     expect(schema.properties.tasks.items.properties.planTaskId).toBeDefined();
@@ -850,6 +850,7 @@ describe("Validator Information Barrier", () => {
     expect(guidelines.some((g: string) => g.includes("planFile") && g.includes("planTaskId"))).toBe(true);
     expect(guidelines.some((g: string) => g.includes("asyncDependency") && g.includes("needed-before-final"))).toBe(true);
     expect(guidelines.some((g: string) => g.includes("action:'wait'"))).toBe(true);
+    expect(guidelines.some((g: string) => g.includes("action:'mark-background'"))).toBe(true);
   });
 });
 
@@ -883,6 +884,84 @@ describe("subagent async wait action", () => {
     expect(result.content[0].text).toBe("root cause found");
     expect(result.details.asyncRun.runId).toBe(runId);
     expect(result.details.results[0].asyncRunId).toBeUndefined();
+  });
+
+  it("marks an async run as background through the subagent action", async () => {
+    const { mockPi, tools } = createMockPi();
+    extension(mockPi);
+    const subagentTool = tools.get("subagent");
+    expect(subagentTool).toBeDefined();
+
+    const registry = getDefaultRegistry();
+    const runId = registry.register("explorer", "inspect issue", "native", undefined, "needed-before-final");
+    registry.update(runId, { status: "running" });
+
+    const result = await subagentTool.execute(
+      "mark-background-call",
+      { action: "mark-background", id: runId },
+      undefined,
+      undefined,
+      { cwd: process.cwd(), hasUI: false, ui: {} },
+    );
+
+    expect(result.content[0].text).toContain("marked as background");
+    expect(registry.getStatus(runId)!.dependency).toBe("background");
+    registry.complete(runId, "interrupted");
+  });
+});
+
+describe("async final-response guard", () => {
+  it("replaces final assistant text and queues a follow-up while blocking async runs are active", async () => {
+    const { mockPi, events } = createMockPi();
+    extension(mockPi);
+
+    const registry = getDefaultRegistry();
+    const runId = registry.register("explorer", "investigate async behavior", "native", undefined, "needed-before-final");
+    registry.update(runId, { status: "running" });
+
+    const handler = events.get("message_end")!.at(-1)!;
+    const result = await handler(
+      {
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Here is the final answer." }],
+          stopReason: "stop",
+        },
+      },
+      { cwd: process.cwd() },
+    );
+
+    expect(result.message.content[0].text).toContain("Async subagent final-response guard");
+    expect(result.message.content[0].text).toContain(runId);
+    expect(mockPi.sendUserMessage).toHaveBeenCalledWith(
+      expect.stringContaining(runId),
+      { deliverAs: "followUp" },
+    );
+    registry.complete(runId, "interrupted");
+  });
+
+  it("does not replace final assistant text after the run is marked background", async () => {
+    const { mockPi, events } = createMockPi();
+    extension(mockPi);
+
+    const registry = getDefaultRegistry();
+    const runId = registry.register("explorer", "long background task", "native", undefined, "background");
+    registry.update(runId, { status: "running" });
+
+    const handler = events.get("message_end")!.at(-1)!;
+    const result = await handler(
+      {
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Here is the final answer." }],
+          stopReason: "stop",
+        },
+      },
+      { cwd: process.cwd() },
+    );
+
+    expect(result).toBeUndefined();
+    registry.complete(runId, "interrupted");
   });
 });
 

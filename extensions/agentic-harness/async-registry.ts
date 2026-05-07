@@ -92,6 +92,16 @@ export class RunRegistry {
     return this.runs.get(runId)?.record;
   }
 
+  setDependency(runId: string, dependency: AsyncDependency): boolean {
+    const entry = this.runs.get(runId);
+    if (!entry) return false;
+    entry.record.dependency = dependency;
+    entry.record.updatedAt = new Date().toISOString();
+    entry.record.progress.elapsedMs = Date.now() - entry.record.progress.startedAt;
+    this.notify(runId, entry.record);
+    return true;
+  }
+
   waitForCompletion(runId: string, timeoutMs = 600_000): Promise<{ record?: AsyncRunRecord; timedOut: boolean }> {
     const record = this.getStatus(runId);
     if (!record) return Promise.resolve({ record: undefined, timedOut: false });

@@ -27,6 +27,15 @@ describe("RunRegistry", () => {
     expect(registry.getStatus(runId)!.dependency).toBe("needed-before-final");
   });
 
+  it("setDependency marks an existing run as background", () => {
+    const registry = new RunRegistry();
+    const runId = registry.register("test-agent", "test task", "native", undefined, "needed-before-final");
+
+    expect(registry.setDependency(runId, "background")).toBe(true);
+    expect(registry.getStatus(runId)!.dependency).toBe("background");
+    expect(registry.setDependency("missing", "background")).toBe(false);
+  });
+
   it("update changes status and pid", () => {
     const registry = new RunRegistry();
     const runId = registry.register("agent", "task", "native");
