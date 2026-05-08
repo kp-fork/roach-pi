@@ -193,9 +193,9 @@ Assess task complexity using these 5 signals. Score each signal, then determine 
 docs/engineering-discipline/context/YYYY-MM-DD-<topic>-brief.md
 ```
 
-(사용자가 다른 위치를 지정하면 해당 위치를 따른다.)
+(If the user specifies a different location, use that location.)
 
-대화에 먼저 Context Brief를 보여주고, 사용자가 승인하면 파일로 저장한다. 이 파일은 `agentic-plan-crafting` 스킬의 입력으로 직접 사용된다.
+Show the Context Brief in the conversation first, then save it to a file after the user approves. This file is used directly as input for the `agentic-plan-crafting` skill.
 
 ## Red Flags
 
@@ -253,18 +253,18 @@ Once the Context Brief is approved by the user, route based on the Complexity As
 - **Simple** (score 5-8) → `agentic-plan-crafting` skill — single-cycle implementation planning
 - **Complex** (score 9-15) → `agentic-milestone-planning` skill — multi-phase milestone decomposition, then `agentic-long-run` for execution
 - **Borderline** (score 8-9) → present both options with recommendation, user decides
-- If further exploration is needed → `agentic-clarification` 스킬 자체의 Q&A 루프 계속
+- If further exploration is needed → continue the Q&A loop within the `agentic-clarification` skill itself
 - If the scope is already trivial and planning is unnecessary → direct implementation
 
 This skill itself **does not invoke the next skill.** It ends by presenting the Context Brief, saving it to a file, and suggesting the routed next step.
 
-**Context Brief → agentic-plan-crafting 매핑:**
+**Context Brief → agentic-plan-crafting mapping:**
 
-| Context Brief 필드 | agentic-plan-crafting 입력 |
+| Context Brief field | agentic-plan-crafting input |
 |---|---|
-| Goal | 계획 헤더의 "목표" |
-| Scope (In/Out) | 계획 헤더의 "작업 범위" |
-| Technical Context | "아키텍처" + "기술 스택" + 파일 구조 매핑의 기반 |
-| Constraints | 태스크 분해 시 제약사항 반영 |
-| Success Criteria | Self-Review 기준 |
-| Open Questions | 계획에 가정(assumption)으로 반영 후 사용자 확인 |
+| Goal | Plan header "Goal" |
+| Scope (In/Out) | Plan header "Scope of Work" |
+| Technical Context | Basis for "Architecture" + "Technical Stack" + file-structure mapping |
+| Constraints | Reflect constraints during task decomposition |
+| Success Criteria | Self-review criteria |
+| Open Questions | Reflect as assumptions in the plan, then confirm with the user |

@@ -5,7 +5,7 @@ description: >
   clarify and develop their ideas by asking targeted questions, expanding on possibilities,
   and producing a structured markdown document capturing the essence of their thinking.
   
-  Triggers: "brainstorm", "아이디어", "아이디어 정리", "생각을 정리하고 싶어", "무엇이든 떠오르는 대로"
+  Triggers: "brainstorm", "idea", "organize ideas", "I want to organize my thoughts", "whatever comes to mind"
 ---
 
 # Agentic Brainstorming
