@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.26.1](https://github.com/tmdgusya/roach-pi/compare/v1.26.0...v1.26.1) (2026-05-08)
+
+### Bug Fixes
+
+* stop loading prior-session async runs on session_start ([df78293](https://github.com/tmdgusya/roach-pi/commit/df782934d9a3dce8fde72b4c531d72f2dee46557))
+
+### Documentation
+
+* translate agentic skill docs to english ([9ce0301](https://github.com/tmdgusya/roach-pi/commit/9ce03019745c8d7061b045d325013814e21b9f3b))
+
 ## [1.26.0](https://github.com/tmdgusya/roach-pi/compare/v1.25.0...v1.26.0) (2026-05-08)
 
 ### Features
