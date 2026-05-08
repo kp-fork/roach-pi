@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.26.0](https://github.com/tmdgusya/roach-pi/compare/v1.25.0...v1.26.0) (2026-05-08)
+
+### Features
+
+* add pi-code-previews as default dependency ([d05cdb4](https://github.com/tmdgusya/roach-pi/commit/d05cdb4c44d82c00adc9aef8931b4867025c1548))
+* vendor pi-code-previews as internal extension ([5c9bc17](https://github.com/tmdgusya/roach-pi/commit/5c9bc17324b81a619ecc79659c69b9c8ecf01f55))
+
 ## [1.25.0](https://github.com/tmdgusya/roach-pi/compare/v1.24.0...v1.25.0) (2026-05-07)
 
 ### Features
