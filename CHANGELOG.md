@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.26.3](https://github.com/tmdgusya/roach-pi/compare/v1.26.2...v1.26.3) (2026-05-11)
+
+### Bug Fixes
+
+* improve subagent render call and result preview to avoid ambiguous ellipsis ([7a2ff36](https://github.com/tmdgusya/roach-pi/commit/7a2ff36195dd2150255a2161afdc39ca308f4a11))
+
 ## [1.26.2](https://github.com/tmdgusya/roach-pi/compare/v1.26.1...v1.26.2) (2026-05-11)
 
 ### Bug Fixes
