@@ -15,6 +15,7 @@ import { emptyUsage, isResultError, isResultSuccess, getResultSummaryText, type 
 import { renderCall, renderResult } from "./render.js";
 import { parsePlan } from "./plan-parser.js";
 import { buildValidatorPrompt } from "./validator-template.js";
+import { readFileSync } from "fs";
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { microcompactMessages, getCompactionPrompt, formatCompactSummary } from "./compaction.js";
 import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
@@ -273,14 +274,25 @@ export default function (pi: ExtensionAPI) {
 
     const shouldRegisterSandboxedBash = process.platform !== "darwin" || process.env.PI_AGENTIC_SANDBOX_BASH === "1";
     if (shouldRegisterSandboxedBash) {
-      const sandboxedBashOperations = createSandboxedBashOperations(createRootSandbox());
+      // Respect shellPath from settings.json so that the sandboxed bash uses the
+      // user's configured shell (e.g. Git Bash) instead of default PATH resolution.
+      let shellPath: string | undefined;
+      try {
+        const settingsPath = join(homedir(), ".pi", "agent", "settings.json");
+        const settingsRaw = readFileSync(settingsPath, "utf-8");
+        const settings = JSON.parse(settingsRaw);
+        shellPath = settings.shellPath;
+      } catch {
+        // Fall through — getShellConfig will use default resolution
+      }
+      const sandboxedBashOperations = createSandboxedBashOperations(createRootSandbox(), shellPath);
       const localBash = createBashTool(process.cwd(), { operations: sandboxedBashOperations });
       pi.registerTool({
         ...localBash,
         label: "bash (sandboxed)",
       });
       pi.on("user_bash", (_event, ctx) => ({
-        operations: createSandboxedBashOperations(createRootSandbox(ctx as any, true)),
+        operations: createSandboxedBashOperations(createRootSandbox(ctx as any, true), shellPath),
       }));
     }
   }

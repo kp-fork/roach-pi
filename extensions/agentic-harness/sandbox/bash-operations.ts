@@ -1,5 +1,6 @@
 import { spawn } from "child_process";
 import type { BashOperations } from "@mariozechner/pi-coding-agent";
+import { getShellConfig } from "@mariozechner/pi-coding-agent";
 import { resolveSandboxLaunch } from "./executor.js";
 import type { SandboxRuntimeOptions } from "./types.js";
 import { getDefaultApprovalStore } from "./approval-store.js";
@@ -13,11 +14,17 @@ function killProcessTree(pid: number): void {
   }
 }
 
-export function createSandboxedBashOperations(sandbox: Omit<SandboxRuntimeOptions, "approvalStore">): BashOperations {
+export function createSandboxedBashOperations(
+  sandbox: Omit<SandboxRuntimeOptions, "approvalStore">,
+  shellPath?: string,
+): BashOperations {
   return {
     async exec(command, cwd, options) {
+      // Resolve the user-configured shell (e.g. Git Bash), but keep the
+      // sandbox login-shell convention (-lc) for args.
+      const { shell: resolvedShell } = getShellConfig(shellPath);
       const resolvedSandbox = await resolveSandboxLaunch({
-        command: "bash",
+        command: resolvedShell,
         args: ["-lc", command],
         cwd,
         env: options.env || process.env,
