@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.26.5](https://github.com/tmdgusya/roach-pi/compare/v1.26.4...v1.26.5) (2026-05-15)
+
+### Bug Fixes
+
+* **agentic-harness:** add missing typebox dependency ([79079cd](https://github.com/tmdgusya/roach-pi/commit/79079cd16c7beb97c754b94dbcaa263af7050788))
+
 ## [1.26.4](https://github.com/tmdgusya/roach-pi/compare/v1.26.3...v1.26.4) (2026-05-14)
 
 ### Bug Fixes
