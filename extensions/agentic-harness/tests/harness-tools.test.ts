@@ -120,132 +120,80 @@ describe("harness-tools registration", () => {
     registerHarnessTools(mockPi as any);
 
     const readSchema = tools.get("todoread")!.parameters;
-    expect(readSchema.properties.runId).toBeDefined();
-    expect(readSchema.properties.rootDir).toBeDefined();
+    expect(readSchema.properties).toEqual({});
 
     const writeSchema = tools.get("todowrite")!.parameters;
-    expect(writeSchema.properties.runId).toBeDefined();
     expect(writeSchema.properties.todos).toBeDefined();
-    expect(writeSchema.properties.todos.items.properties.status.enum).toEqual([
-      "pending", "in_progress", "completed", "failed", "cancelled",
-    ]);
-    expect(writeSchema.properties.todos.items.properties.priority.enum).toEqual([
-      "high", "medium", "low",
-    ]);
+    expect(writeSchema.properties.todos.items.properties.content).toBeDefined();
+    expect(writeSchema.properties.todos.items.properties.status).toBeDefined();
+    expect(writeSchema.properties.todos.items.properties.priority).toBeDefined();
+    // No id, no runId — senpi-style simple todos
+    expect(writeSchema.properties.runId).toBeUndefined();
+    expect(writeSchema.properties.todos.items.properties.id).toBeUndefined();
   });
 });
 
 describe("todowrite and todoread execute", () => {
-  it("reads milestones and plan tasks from harness state", async () => {
+  it("todoread returns empty list initially", async () => {
     const { mockPi, tools } = createMockPi();
     registerHarnessTools(mockPi as any);
-    const rootDir = await makeTempDir();
     const ctx = createMockCtx();
 
-    await tools.get("harness_milestone")!.execute(
-      "tc-1",
-      { runId: "run-1", action: "create", id: "M1", name: "Milestone 1", rootDir },
-      undefined,
-      undefined,
-      ctx,
-    );
-    await tools.get("harness_plan")!.execute(
-      "tc-2",
-      { runId: "run-1", action: "attach", planId: "m1-plan", milestoneId: "M1", title: "Plan", goal: "Goal", rootDir },
-      undefined,
-      undefined,
-      ctx,
-    );
-    await tools.get("harness_plan")!.execute(
-      "tc-3",
-      { runId: "run-1", action: "define_tasks", planId: "m1-plan", tasks: [{ id: 1, name: "Task 1" }], rootDir },
-      undefined,
-      undefined,
-      ctx,
-    );
-
     const result = await tools.get("todoread")!.execute(
-      "tc-4",
-      { runId: "run-1", rootDir },
+      "tc-1",
+      {},
       undefined,
       undefined,
       ctx,
     );
 
     expect(result.isError).toBeFalsy();
-    expect(result.details.todos.map((todo: any) => todo.id)).toEqual(["M1", "M1.T1"]);
+    expect(result.details.todos).toEqual([]);
   });
 
-  it("updates milestone and plan task statuses", async () => {
+  it("todowrite stores and todoread returns the same todos", async () => {
     const { mockPi, tools } = createMockPi();
     registerHarnessTools(mockPi as any);
-    const rootDir = await makeTempDir();
     const ctx = createMockCtx();
 
-    await tools.get("harness_milestone")!.execute(
+    const todos = [
+      { content: "src/utils.ts: Add validateEmail() - returns boolean", status: "in_progress", priority: "high" },
+      { content: "src/index.ts: Call validateEmail() before insert - rejects invalid", status: "pending", priority: "medium" },
+    ];
+
+    const writeResult = await tools.get("todowrite")!.execute(
       "tc-1",
-      { runId: "run-1", action: "create", id: "M1", name: "Milestone 1", rootDir },
+      { todos },
       undefined,
       undefined,
       ctx,
     );
-    await tools.get("harness_plan")!.execute(
+
+    expect(writeResult.isError).toBeFalsy();
+    expect(writeResult.details.todos).toHaveLength(2);
+    expect(writeResult.details.todos[0].content).toBe("src/utils.ts: Add validateEmail() - returns boolean");
+
+    const readResult = await tools.get("todoread")!.execute(
       "tc-2",
-      { runId: "run-1", action: "attach", planId: "m1-plan", milestoneId: "M1", title: "Plan", goal: "Goal", rootDir },
-      undefined,
-      undefined,
-      ctx,
-    );
-    await tools.get("harness_plan")!.execute(
-      "tc-3",
-      { runId: "run-1", action: "define_tasks", planId: "m1-plan", tasks: [{ id: 1, name: "Task 1" }], rootDir },
+      {},
       undefined,
       undefined,
       ctx,
     );
 
-    const milestoneResult = await tools.get("todowrite")!.execute(
-      "tc-4",
-      {
-        runId: "run-1",
-        rootDir,
-        todos: [{ id: "M1", content: "Milestone 1", status: "in_progress", priority: "low" }],
-      },
-      undefined,
-      undefined,
-      ctx,
-    );
-
-    expect(milestoneResult.isError).toBeFalsy();
-    let snapshot = await readHarnessStateSnapshot(join(rootDir, "run-1", "state.json"));
-    expect(snapshot?.state.milestones[0]?.status).toBe("executing");
-
-    const taskResult = await tools.get("todowrite")!.execute(
-      "tc-5",
-      {
-        runId: "run-1",
-        rootDir,
-        todos: [{ id: "M1.T1", content: "Task 1", status: "completed" }],
-      },
-      undefined,
-      undefined,
-      ctx,
-    );
-
-    expect(taskResult.isError).toBeFalsy();
-    snapshot = await readHarnessStateSnapshot(join(rootDir, "run-1", "state.json"));
-    expect(snapshot?.state.plans[0]?.tasks[0]?.status).toBe("completed");
+    expect(readResult.isError).toBeFalsy();
+    expect(readResult.details.todos).toHaveLength(2);
+    expect(readResult.details.todos[1].status).toBe("pending");
   });
 
-  it("returns an error for an unknown milestone id", async () => {
+  it("todowrite marks completed immediately", async () => {
     const { mockPi, tools } = createMockPi();
     registerHarnessTools(mockPi as any);
-    const rootDir = await makeTempDir();
     const ctx = createMockCtx();
 
-    await tools.get("harness_milestone")!.execute(
+    await tools.get("todowrite")!.execute(
       "tc-1",
-      { runId: "run-1", action: "create", id: "M1", name: "Milestone 1", rootDir },
+      { todos: [{ content: "Task 1", status: "in_progress", priority: "high" }] },
       undefined,
       undefined,
       ctx,
@@ -253,14 +201,13 @@ describe("todowrite and todoread execute", () => {
 
     const result = await tools.get("todowrite")!.execute(
       "tc-2",
-      { runId: "run-1", rootDir, todos: [{ id: "M9", content: "Missing", status: "completed" }] },
+      { todos: [{ content: "Task 1", status: "completed", priority: "high" }] },
       undefined,
       undefined,
       ctx,
     );
 
-    expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain("Milestone M9 not found");
+    expect(result.details.todos[0].status).toBe("completed");
   });
 });
 
