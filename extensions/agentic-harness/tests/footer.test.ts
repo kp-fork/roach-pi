@@ -57,7 +57,6 @@ function createFooter(
     { running: new Map([["tool-1", "read"]]) },
     null,
     null,
-    null,
     { preset, glyphs },
   );
 }
@@ -108,7 +107,6 @@ describe("RoachFooter Powerline styling", () => {
       },
       { totalInput: 100, totalCacheRead: 50 },
       { running: new Map() },
-      null,
       null,
     );
 
@@ -193,7 +191,6 @@ describe("RoachFooter status bridge", () => {
       },
       { totalInput: 100, totalCacheRead: 50 },
       { running: new Map() },
-      null,
       null,
       harnessProgress,
     );

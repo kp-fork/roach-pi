@@ -2,7 +2,7 @@ import { truncateToWidth, visibleWidth, type Component, type TUI } from "@marioz
 import type { Theme, ThemeColor } from "@mariozechner/pi-coding-agent";
 import type { ReadonlyFooterDataProvider } from "@mariozechner/pi-coding-agent";
 import { basename } from "path";
-import { PLAN_PROGRESS_SPINNER_MS, type PlanProgressTracker } from "./plan-progress.js";
+import { PLAN_PROGRESS_SPINNER_MS } from "./harness-progress.js";
 import type { FooterGlyphMode, FooterPresetName } from "./ui-settings.js";
 import type { HarnessProgressProvider } from "./harness-progress.js";
 
@@ -193,12 +193,10 @@ export class RoachFooter implements Component {
   private footerCtx: FooterContext;
   private cacheStats: CacheStats;
   private activeTools: ActiveTools;
-  private planProgress: PlanProgressTracker | null;
   private tui: Pick<TUI, "requestRender"> | null;
   private harnessProgress: HarnessProgressProvider | null;
   private preset: FooterPresetName;
   private glyphs: FooterGlyphMode;
-  private unsubscribePlanProgress: (() => void) | null = null;
   private unsubscribeHarnessProgress: (() => void) | null = null;
   private spinnerTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -208,7 +206,6 @@ export class RoachFooter implements Component {
     footerCtx: FooterContext,
     cacheStats: CacheStats,
     activeTools: ActiveTools,
-    planProgress: PlanProgressTracker | null = null,
     tui: Pick<TUI, "requestRender"> | null = null,
     harnessProgress: HarnessProgressProvider | null = null,
     options: FooterOptions = {},
@@ -218,12 +215,10 @@ export class RoachFooter implements Component {
     this.footerCtx = footerCtx;
     this.cacheStats = cacheStats;
     this.activeTools = activeTools;
-    this.planProgress = planProgress;
     this.harnessProgress = harnessProgress;
     this.preset = options.preset ?? "default";
     this.glyphs = options.glyphs ?? (useNerdIcons ? "nerd" : "plain");
     this.tui = tui;
-    this.unsubscribePlanProgress = this.planProgress?.subscribeOnChange(() => this.schedulePlanRender()) ?? null;
     this.unsubscribeHarnessProgress = this.harnessProgress?.subscribeOnChange(() => this.schedulePlanRender()) ?? null;
     this.updateSpinnerTimer();
   }
@@ -232,7 +227,6 @@ export class RoachFooter implements Component {
 
   dispose() {
     if (this.spinnerTimer) { clearInterval(this.spinnerTimer); this.spinnerTimer = null; }
-    this.unsubscribePlanProgress?.(); this.unsubscribePlanProgress = null;
     this.unsubscribeHarnessProgress?.(); this.unsubscribeHarnessProgress = null;
   }
 
@@ -242,8 +236,7 @@ export class RoachFooter implements Component {
   }
 
   private hasRunningPlanTasks(): boolean {
-    return (this.harnessProgress?.hasState() && this.harnessProgress?.hasRunningTasks())
-      || (this.planProgress?.getProgress().running ?? 0) > 0;
+    return this.harnessProgress?.hasState() && this.harnessProgress?.hasRunningTasks();
   }
 
   private updateSpinnerTimer() {
@@ -265,21 +258,16 @@ export class RoachFooter implements Component {
 
     const hasStructuredMilestones = this.harnessProgress?.hasMilestones() ?? false;
     const hasStructuredPlan = this.harnessProgress?.hasPlan() ?? false;
-    const hasPlan = hasStructuredPlan || (this.planProgress?.hasPlan() ?? false);
 
-    if (hasStructuredMilestones || hasPlan) {
+    if (hasStructuredMilestones || hasStructuredPlan) {
       const lines: string[] = [border];
       const pw = Math.max(0, width - 4);
       if (hasStructuredMilestones && this.harnessProgress) {
         lines.push(...this.harnessProgress.renderMilestones(this.theme, pw).map((l) => fitLine(l, width)));
-        if (hasPlan) lines.push(fitLine(this.theme.fg("dim", "  ·"), width));
+        if (hasStructuredPlan) lines.push(fitLine(this.theme.fg("dim", "  ·"), width));
       }
-      if (hasPlan) {
-        if (hasStructuredPlan && this.harnessProgress) {
-          lines.push(...this.harnessProgress.renderPlan(this.theme, pw).map((l) => fitLine(l, width)));
-        } else if (this.planProgress) {
-          lines.push(...this.planProgress.render(this.theme, pw).map((l) => fitLine(l, width)));
-        }
+      if (hasStructuredPlan && this.harnessProgress) {
+        lines.push(...this.harnessProgress.renderPlan(this.theme, pw).map((l) => fitLine(l, width)));
       }
       lines.push(...normalLines);
       return lines;

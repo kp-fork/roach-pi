@@ -1,23 +1,11 @@
 /**
- * LEGACY MODULE — Parser-derived session reconstruction.
+ * LEGACY MODULE — Shared helpers re-exported for backward compatibility.
  *
- * These functions infer progress from assistant prose, tool args,
- * plan markdown, state.md, and todo.md. They are fragile and should
- * NOT be used as the primary session-restore path.
- *
- * Primary path: HarnessState snapshot + HARNESS_STATE_EVENT_CUSTOM_TYPE replay.
- *
- * This module exists only for backwards compatibility with sessions
- * that predate structured state. New code must use structured tools.
+ * These functions are used for plan path extraction and subagent argument
+ * parsing. They do NOT depend on any tracker or rendering class.
  */
 
 export {
-  reconstructPlanProgressFromSessionEntries,
-  loadPlanFromAssistantMessageEnd,
-  loadPlanFromToolResultEvent,
-  reloadPlanFromSubagentArgs,
-  startPlanSubagentTasks,
-  completePlanSubagentTasks,
   extractPlanPathsFromArgs,
   subagentItemRecords,
   getToolExecutionArgs,

@@ -21,17 +21,9 @@ import { microcompactMessages, getCompactionPrompt, formatCompactSummary } from 
 import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
 import { complete } from "@mariozechner/pi-ai";
 import { isDisciplineAgent, augmentAgentWithKarpathy } from "./discipline.js";
-import { PlanProgressTracker } from "./plan-progress.js";
-import { WorkingVisibilityController } from "./working-visibility.js";
 import {
-  completePlanSubagentTasks,
   extractPlanPathsFromArgs,
   getToolExecutionArgs,
-  loadPlanFromAssistantMessageEnd,
-  loadPlanFromToolResultEvent,
-  reconstructPlanProgressFromSessionEntries,
-  reloadPlanFromSubagentArgs,
-  startPlanSubagentTasks,
   subagentItemRecords,
 } from "./legacy-import-markdown.js";
 import {
@@ -46,7 +38,7 @@ import {
   HARNESS_STATE_EVENT_CUSTOM_TYPE,
   restoreHarnessStateFromSnapshotAndEvents,
 } from "./harness-events.js";
-import { createHarnessState, selectActivePlan, type HarnessState } from "./harness-state.js";
+import { createHarnessState, type HarnessState } from "./harness-state.js";
 import { fetchUrlToMarkdown } from "./webfetch/utils.js";
 import { PI_ENABLE_TEAM_MODE_ENV, PI_TEAM_WORKER_ENV, cleanupActiveTeamTmuxResources, formatTeamRunSummary, runTeam, type TeamBackend, type TeamRunSummary } from "./team.js";
 import { defaultTeamRunStateRoot, listTeamRuns, readTeamRunRecord, writeTeamRunRecord, type StaleTaskResumeMode } from "./team-state.js";
@@ -83,7 +75,6 @@ let clarificationDone: boolean = false;
 
 const cacheStats: CacheStats = { totalInput: 0, totalCacheRead: 0 };
 const activeTools: ActiveTools = { running: new Map() };
-const planProgress = new PlanProgressTracker();
 
 async function computeGitStats(cwd: string): Promise<GitStats> {
   const result: GitStats = { ahead: 0, behind: 0, dirty: 0, untracked: 0 };
@@ -137,17 +128,6 @@ function getModelInfo(ctx: any): ModelInfo {
   return { name: model.name, isLatest };
 }
 
-const PLAN_PROGRESS_CUSTOM_TYPE = "plan-progress";
-const MILESTONE_PROGRESS_CUSTOM_TYPE = "milestone-progress";
-
-function persistProgressSnapshot(ctx: { sessionManager?: any }): void {
-  if (planProgress.hasPlan()) {
-    ctx.sessionManager?.appendCustomEntry?.(PLAN_PROGRESS_CUSTOM_TYPE, {
-      taskStatuses: planProgress.getTaskStatuses(),
-    });
-  }
-
-
 const MICROCOMPACTION_ENV = "PI_AGENTIC_MICROCOMPACTION";
 
 function isMicrocompactionEnabled(): boolean {
@@ -159,8 +139,6 @@ function isMicrocompactionEnabled(): boolean {
 const toolCallArgsById = new Map<string, Record<string, unknown>>();
 const planTaskIdsByToolCallId = new Map<string, number[]>();
 
-const sessionPlanPaths = new Set<string>();
-let workingVisibility: WorkingVisibilityController | null = null;
 let harnessProgress: HarnessProgressProvider | null = null;
 function extractExplicitPlanTaskIdsFromArgs(args: unknown): number[] {
   return [...new Set(subagentItemRecords(args)
@@ -1194,9 +1172,6 @@ export default function (pi: ExtensionAPI) {
   preferTodoSurfaceTools(pi);
 
   pi.on("session_shutdown", async (_event, _ctx) => {
-    workingVisibility?.restore();
-    workingVisibility = null;
-    sessionPlanPaths.clear();
     harnessProgress = null;
     getDefaultRegistry().abortAll();
     await cleanupActiveTeamTmuxResources();
@@ -1502,19 +1477,6 @@ Do not start multi-step implementation without a clear understanding of what the
   pi.on("tool_result", async (event, ctx) => {
     const toolName = event.toolName;
 
-    // LEGACY PATH — parser-derived plan/milestone loading.
-    // Skip when structured state exists; harness tools handle updates directly.
-    if (!harnessProgress?.hasState()) {
-      if (toolName === "read" || toolName === "write") {
-        await loadPlanFromToolResultEvent(planProgress, {
-          toolName,
-          input: event.input as Record<string, unknown> | undefined,
-          content: event.content,
-        }, ctx.cwd, sessionPlanPaths);
-      }
-
-    }
-
     if (toolName === "harness_milestone" || toolName === "harness_plan" || toolName === "harness_todo") {
       const input = event.input as Record<string, unknown> | undefined;
       const runId = typeof input?.runId === "string" ? input.runId : undefined;
@@ -1704,7 +1666,6 @@ Do not start multi-step implementation without a clear understanding of what the
       if (!ok) return;
 
       currentPhase = "planning";
-      planProgress.clear();
       ctx.ui.setStatus("harness", "Agentic planning workflow in progress...");
 
       const topic = args?.trim() || "";
@@ -1731,7 +1692,6 @@ Do not start multi-step implementation without a clear understanding of what the
       if (!confirmed) return;
 
       currentPhase = "ultraplanning";
-      planProgress.clear();
       ctx.ui.setStatus("harness", "Agentic milestone workflow in progress...");
 
       const topic = args?.trim() || "";
@@ -1960,7 +1920,6 @@ Do not start multi-step implementation without a clear understanding of what the
     handler: async (_args, ctx) => {
       currentPhase = "idle";
       activeGoalDocument = null;
-      planProgress.clear();
       ctx.ui.setStatus("harness", undefined);
       ctx.ui.notify("Workflow phase reset to idle.", "info");
     },
@@ -2079,11 +2038,6 @@ Do not start multi-step implementation without a clear understanding of what the
       }
     }
 
-    // LEGACY PATH — parser-derived plan/milestone loading from assistant prose.
-    // Skip when structured state exists; harness tools handle updates directly.
-    if (!harnessProgress?.hasState()) {
-      await loadPlanFromAssistantMessageEnd(planProgress, event, ctx.cwd, sessionPlanPaths);
-    }
   });
 
   pi.on("tool_execution_start", async (event, ctx) => {
@@ -2093,9 +2047,7 @@ Do not start multi-step implementation without a clear understanding of what the
       const args = getToolExecutionArgs(event, toolCallArgsById.get(event.toolCallId));
       if (args) {
         toolCallArgsById.set(event.toolCallId, args);
-        await reloadPlanFromSubagentArgs(planProgress, args, ctx.cwd, sessionPlanPaths);
-        const matchedTaskIds = startPlanSubagentTasks(planProgress, args);
-        const structuredTaskIds = matchedTaskIds.length > 0 ? matchedTaskIds : extractExplicitPlanTaskIdsFromArgs(args);
+        const structuredTaskIds = extractExplicitPlanTaskIdsFromArgs(args);
         if (structuredTaskIds.length > 0) {
           planTaskIdsByToolCallId.set(event.toolCallId, structuredTaskIds);
           await persistStructuredSubagentTaskStatuses(ctx, args, structuredTaskIds, "running");
@@ -2112,16 +2064,9 @@ Do not start multi-step implementation without a clear understanding of what the
       if (args) {
         const matchedTaskIds = planTaskIdsByToolCallId.get(event.toolCallId);
         const success = !(event.isError ?? false);
-        const affectedTaskIds = completePlanSubagentTasks(planProgress, args, success, matchedTaskIds);
         const hasValidator = subagentItemRecords(args).some((item) => item.agent === "plan-validator");
-        const structuredTaskIds = affectedTaskIds.length > 0
-          ? affectedTaskIds
-          : (matchedTaskIds && matchedTaskIds.length > 0 ? matchedTaskIds : extractExplicitPlanTaskIdsFromArgs(args));
-        const shouldPersistStructuredCompletion = structuredTaskIds.length > 0;
-        if (affectedTaskIds.length > 0) {
-          persistProgressSnapshot(ctx);
-        }
-        if (shouldPersistStructuredCompletion) {
+        const structuredTaskIds = matchedTaskIds && matchedTaskIds.length > 0 ? matchedTaskIds : extractExplicitPlanTaskIdsFromArgs(args);
+        if (structuredTaskIds.length > 0) {
           const taskStatus = success ? "completed" : "failed";
           await persistStructuredSubagentTaskStatuses(ctx, args, structuredTaskIds, taskStatus);
         }
@@ -2143,8 +2088,6 @@ Do not start multi-step implementation without a clear understanding of what the
     activeTools.running.clear();
     toolCallArgsById.clear();
     planTaskIdsByToolCallId.clear();
-    sessionPlanPaths.clear();
-    planProgress.clear();
     await getDefaultRegistry().sweepStalePersisted(join(ctx.cwd, ".pi", "agent", "runs"));
     const branchEntries = ctx.sessionManager?.getBranch?.() ?? [];
 
@@ -2175,51 +2118,7 @@ Do not start multi-step implementation without a clear understanding of what the
         createHarnessStateSnapshot(reconstructedState),
       );
       structuredRestore = { rootDir, state: reconstructedState };
-
-      // Populate plan tracker from structured state if a plan exists
-      const activePlan = selectActivePlan(reconstructedState);
-      if (activePlan && activePlan.tasks.length > 0) {
-        let loadedPlanMarkdown = false;
-        if (activePlan.planFile) {
-          sessionPlanPaths.add(activePlan.planFile);
-          try {
-            const planPath = resolve(ctx.cwd, activePlan.planFile);
-            const planContent = await readFile(planPath, "utf-8");
-            planProgress.loadPlan(planContent);
-            loadedPlanMarkdown = true;
-          } catch { /* plan file not found; fall back to structured tasks */ }
-        }
-        if (!loadedPlanMarkdown) {
-          planProgress.loadStructuredPlan(activePlan);
-        }
-        planProgress.restoreTaskStatuses(
-          activePlan.tasks.map((t) => ({ id: t.id, status: t.status === "skipped" ? "failed" : t.status })),
-        );
-      }
-    } else {
-      // LEGACY PATH — parser-derived reconstruction for pre-structured sessions
-      await reconstructPlanProgressFromSessionEntries(
-        planProgress,
-        branchEntries,
-        ctx.cwd,
-        sessionPlanPaths,
-      );
-
-      type MilestoneSnapshot = { milestoneStatuses?: Array<{ id: string; status: MilestoneStatus }>; activeTasks?: Array<{ name: string; done: boolean }> | null; activeMilestoneId?: string | null };
-
-      let lastMilestoneSnapshot: MilestoneSnapshot | null = null;
-      for (const entry of branchEntries) {
-        if (entry?.type === "custom" && entry?.customType === MILESTONE_PROGRESS_CUSTOM_TYPE && entry?.data) {
-          lastMilestoneSnapshot = entry.data as MilestoneSnapshot;
-        }
-      }
-
-      workingVisibility?.restore();
-    workingVisibility = new WorkingVisibilityController(
-      planProgress,
-      ctx.ui as { setWorkingVisible?: (visible: boolean) => void },
-    );
-    workingVisibility.start();
+    }
 
     showWelcomeHeader(ctx.ui);
 
@@ -2251,7 +2150,7 @@ Do not start multi-step implementation without a clear understanding of what the
         getGitStats: () => gitStats,
         getThinkingLevel: () => undefined,
         getModelInfo: () => getModelInfo(ctx),
-      }, cacheStats, activeTools, planProgress, tui, harnessProgress, {
+      }, cacheStats, activeTools, tui, harnessProgress, {
         preset: uiSettings.footerPreset,
         glyphs: uiSettings.footerGlyphs,
       });

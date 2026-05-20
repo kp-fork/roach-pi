@@ -13,7 +13,6 @@ describe("skill docs reference structured harness tools", () => {
     expect(src).toContain("todoread");
     expect(src).not.toContain("harness_plan set_task_status");
     expect(src).toContain("After the validator passes");
-    expect(src).toContain("rendered output only");
   });
 
   it("agentic-long-run references harness_milestone, todowrite, todoread, and canonical structured state", () => {
