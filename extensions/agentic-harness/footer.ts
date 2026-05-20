@@ -5,6 +5,7 @@ import { basename } from "path";
 import { PLAN_PROGRESS_SPINNER_MS } from "./harness-progress.js";
 import type { FooterGlyphMode, FooterPresetName } from "./ui-settings.js";
 import type { HarnessProgressProvider } from "./harness-progress.js";
+import { getCurrentTodos, subscribeOnChange, getTodoMarker, type SimpleTodoItem } from "./simple-todo.js";
 
 // Types
 
@@ -198,6 +199,7 @@ export class RoachFooter implements Component {
   private preset: FooterPresetName;
   private glyphs: FooterGlyphMode;
   private unsubscribeHarnessProgress: (() => void) | null = null;
+  private unsubscribeTodo: (() => void) | null = null;
   private spinnerTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
@@ -220,6 +222,7 @@ export class RoachFooter implements Component {
     this.glyphs = options.glyphs ?? (useNerdIcons ? "nerd" : "plain");
     this.tui = tui;
     this.unsubscribeHarnessProgress = this.harnessProgress?.subscribeOnChange(() => this.schedulePlanRender()) ?? null;
+    this.unsubscribeTodo = subscribeOnChange(() => this.schedulePlanRender());
     this.updateSpinnerTimer();
   }
 
@@ -228,6 +231,7 @@ export class RoachFooter implements Component {
   dispose() {
     if (this.spinnerTimer) { clearInterval(this.spinnerTimer); this.spinnerTimer = null; }
     this.unsubscribeHarnessProgress?.(); this.unsubscribeHarnessProgress = null;
+    this.unsubscribeTodo?.(); this.unsubscribeTodo = null;
   }
 
   private schedulePlanRender() {
@@ -236,7 +240,9 @@ export class RoachFooter implements Component {
   }
 
   private hasRunningPlanTasks(): boolean {
-    return this.harnessProgress?.hasState() && this.harnessProgress?.hasRunningTasks();
+    const harnessRunning = this.harnessProgress?.hasState() && this.harnessProgress?.hasRunningTasks();
+    const todoRunning = getCurrentTodos().some((t) => t.status === "in_progress");
+    return harnessRunning || todoRunning;
   }
 
   private updateSpinnerTimer() {
@@ -251,6 +257,48 @@ export class RoachFooter implements Component {
     }
   }
 
+  private renderSimpleTodos(width: number): string[] {
+    const todos = getCurrentTodos();
+    if (todos.length === 0) return [];
+
+    const t = this.theme;
+    const lines: string[] = [];
+    const pw = Math.max(0, width - 4);
+    const done = todos.filter((t) => t.status === "completed").length;
+    const inProgress = todos.find((t) => t.status === "in_progress");
+
+    // Header with progress
+    const header = `Todo ${done}/${todos.length}`;
+    lines.push(fitLine(`  ${t.fg("accent", t.bold(header))}`, width));
+
+    // Show in_progress item first (most important), then up to 4 most recent non-completed
+    const maxItems = 5;
+    const shown: SimpleTodoItem[] = [];
+    if (inProgress) shown.push(inProgress);
+    for (const todo of todos) {
+      if (shown.length >= maxItems) break;
+      if (todo === inProgress) continue;
+      if (todo.status === "completed") continue;
+      shown.push(todo);
+    }
+
+    for (const todo of shown) {
+      const marker = getTodoMarker(todo.status);
+      const color: Parameters<Theme["fg"]>[0] =
+        todo.status === "in_progress" ? "warning" :
+        todo.status === "completed" ? "success" : "dim";
+      const text = truncateToWidth(todo.content, Math.max(0, pw - 4));
+      lines.push(fitLine(`    ${t.fg(color, marker)} ${t.fg("dim", text)}`, width));
+    }
+
+    const remaining = todos.filter((t) => !shown.includes(t)).length;
+    if (remaining > 0) {
+      lines.push(fitLine(`    ${t.fg("dim", `... +${remaining} more`)}`, width));
+    }
+
+    return lines;
+  }
+
   render(width: number): string[] {
     this.updateSpinnerTimer();
     const normalLines = this.renderNormalFooter(width);
@@ -258,16 +306,21 @@ export class RoachFooter implements Component {
 
     const hasStructuredMilestones = this.harnessProgress?.hasMilestones() ?? false;
     const hasStructuredPlan = this.harnessProgress?.hasPlan() ?? false;
+    const simpleTodoLines = this.renderSimpleTodos(width);
+    const hasSimpleTodos = simpleTodoLines.length > 0;
 
-    if (hasStructuredMilestones || hasStructuredPlan) {
+    if (hasStructuredMilestones || hasStructuredPlan || hasSimpleTodos) {
       const lines: string[] = [border];
       const pw = Math.max(0, width - 4);
       if (hasStructuredMilestones && this.harnessProgress) {
         lines.push(...this.harnessProgress.renderMilestones(this.theme, pw).map((l) => fitLine(l, width)));
-        if (hasStructuredPlan) lines.push(fitLine(this.theme.fg("dim", "  ·"), width));
+        if (hasStructuredPlan || hasSimpleTodos) lines.push(fitLine(this.theme.fg("dim", "  ·"), width));
       }
       if (hasStructuredPlan && this.harnessProgress) {
         lines.push(...this.harnessProgress.renderPlan(this.theme, pw).map((l) => fitLine(l, width)));
+      }
+      if (hasSimpleTodos) {
+        lines.push(...simpleTodoLines);
       }
       lines.push(...normalLines);
       return lines;

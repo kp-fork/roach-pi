@@ -47,6 +47,7 @@ import { buildTeamCommandPrompt, getTeamArgumentCompletions, isTeamFollowUpComma
 import { renderWebfetchCall, renderWebfetchResult } from "./webfetch/render.js";
 import { registerHarnessTools } from "./harness-tools.js";
 import { HarnessProgressProvider } from "./harness-progress.js";
+import { restoreTodosFromBranchEntries } from "./simple-todo.js";
 import { applyStructuredPlanTaskStatusUpdates, selectStructuredPlanForPaths } from "./harness-runtime-progress.js";
 import { withHarnessStateMutationLock } from "./harness-state-service.js";
 import { getDefaultApprovalStore } from "./sandbox/approval-store.js";
@@ -2090,6 +2091,9 @@ Do not start multi-step implementation without a clear understanding of what the
     planTaskIdsByToolCallId.clear();
     await getDefaultRegistry().sweepStalePersisted(join(ctx.cwd, ".pi", "agent", "runs"));
     const branchEntries = ctx.sessionManager?.getBranch?.() ?? [];
+
+    // Restore simple todo state from session branch entries
+    restoreTodosFromBranchEntries(branchEntries);
 
     // --- Structured-first session restore (M6) ---
     // Detect structured state via validated HARNESS_STATE_EVENT_CUSTOM_TYPE entries.

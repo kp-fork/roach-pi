@@ -22,6 +22,16 @@ const TODO_STATE_ENTRY_TYPE = "roach-pi.todo-state";
 
 // In-memory todo state for the current session
 let currentTodos: SimpleTodoItem[] = [];
+let changeListeners: Array<() => void> = [];
+
+export function subscribeOnChange(listener: () => void): () => void {
+  changeListeners.push(listener);
+  return () => { changeListeners = changeListeners.filter((l) => l !== listener); };
+}
+
+function notifyChange(): void {
+  for (const listener of changeListeners) listener();
+}
 
 export function getCurrentTodos(): SimpleTodoItem[] {
   return currentTodos.map((t) => ({ ...t }));
@@ -29,6 +39,7 @@ export function getCurrentTodos(): SimpleTodoItem[] {
 
 export function setCurrentTodos(todos: SimpleTodoItem[]): void {
   currentTodos = todos.map((t) => ({ ...t }));
+  notifyChange();
 }
 
 export function appendTodoEntry(
