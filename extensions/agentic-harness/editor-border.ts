@@ -129,7 +129,7 @@ export function buildTopRightSegments(ctx: BorderContext): string {
 
   // Context usage
   const pctStr = `${ctx.contextPercent.toFixed(0)}%`;
-  let ctxColor = BORDER_COLORS.context;
+  let ctxColor: string = BORDER_COLORS.context;
   if (ctx.contextPercent > 80) ctxColor = BORDER_COLORS.contextCritical;
   else if (ctx.contextPercent > 50) ctxColor = BORDER_COLORS.contextHigh;
   const ctxTotal = ctx.contextWindow > 0

@@ -42,11 +42,23 @@ export function setCurrentTodos(todos: SimpleTodoItem[]): void {
   notifyChange();
 }
 
+function hasAppendCustomEntry(
+  sessionManager: unknown,
+): sessionManager is { appendCustomEntry: (type: string, data: unknown) => unknown } {
+  return (
+    typeof sessionManager === "object" &&
+    sessionManager !== null &&
+    "appendCustomEntry" in sessionManager &&
+    typeof sessionManager.appendCustomEntry === "function"
+  );
+}
+
 export function appendTodoEntry(
-  sessionManager: { appendCustomEntry?: (type: string, data: unknown) => unknown } | undefined,
+  sessionManager: unknown,
   todos: SimpleTodoItem[],
 ): void {
-  sessionManager?.appendCustomEntry?.(TODO_STATE_ENTRY_TYPE, { todos });
+  if (!hasAppendCustomEntry(sessionManager)) return;
+  sessionManager.appendCustomEntry(TODO_STATE_ENTRY_TYPE, { todos });
 }
 
 export function isTerminalStatus(status: string): boolean {
