@@ -3,6 +3,10 @@
 </p>
 
 <p align="center">
+  <img src="assets/roach-pi-mascot.png" alt="ROACH PI mascot" width="280">
+</p>
+
+<p align="center">
   <strong>Engineering discipline, agentic orchestration, and power-user tools for the pi coding agent.</strong>
 </p>
 
