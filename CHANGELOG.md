@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.31.0](https://github.com/tmdgusya/roach-pi/compare/v1.30.0...v1.31.0) (2026-05-28)
+
+### Features
+
+* **agentic-harness:** replace ultraplan with plan milestones ([8f7888c](https://github.com/tmdgusya/roach-pi/commit/8f7888c700e5e5a1fa644ce68c45e84e60cdf4f1))
+
 ## [1.30.0](https://github.com/tmdgusya/roach-pi/compare/v1.29.1...v1.30.0) (2026-05-28)
 
 ### Features
