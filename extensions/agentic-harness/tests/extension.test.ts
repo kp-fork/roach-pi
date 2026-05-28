@@ -1363,4 +1363,57 @@ describe("No Global State File", () => {
 
 });
 
+describe("working row shimmer", () => {
+  it("configures the built-in working row and updates it from tool intent", async () => {
+    vi.useFakeTimers();
+    try {
+      const { mockPi, events } = createMockPi();
+      extension(mockPi);
+
+      const setWorkingMessage = vi.fn();
+      const setWorkingIndicator = vi.fn();
+      const ctx: any = {
+        cwd: ".",
+        ui: {
+          setWorkingMessage,
+          setWorkingIndicator,
+          setFooter: vi.fn(),
+          setHeader: vi.fn(),
+          notify: vi.fn(),
+          theme: {
+            fg: (_color: string, text: string) => text,
+            bold: (text: string) => text,
+            getFgAnsi: (_color: string) => "\x1b[38;5;33m",
+          },
+        },
+        sessionManager: { getBranch: () => [] },
+        model: { id: "mock/model", name: "mock", provider: "mock" },
+        getContextUsage: () => undefined,
+      };
+
+      await events.get("session_start")![0]({ type: "session_start" } as any, ctx);
+      await events.get("before_agent_start")![0]({ type: "before_agent_start", prompt: "hello", systemPrompt: "base" } as any, ctx);
+
+      const plainWorkingMessage = () => String(setWorkingMessage.mock.calls.at(-1)?.[0] ?? "").replace(/\x1b\[[0-9;]*m/g, "");
+
+      expect(setWorkingIndicator).toHaveBeenCalledWith(expect.objectContaining({ intervalMs: 80 }));
+      expect(plainWorkingMessage()).toContain("Working…");
+
+      await events.get("tool_execution_start")![0]({ toolCallId: "tool-1", toolName: "read", intent: "Reading project files" } as any, ctx);
+      expect(plainWorkingMessage()).toContain("Reading project files");
+
+      vi.advanceTimersByTime(80);
+      expect(plainWorkingMessage()).toContain("Reading project files");
+
+      await events.get("tool_execution_end")![0]({ toolCallId: "tool-1", toolName: "read", isError: false } as any, ctx);
+      expect(plainWorkingMessage()).toContain("Working…");
+
+      await events.get("message_end")![0]({ message: { role: "assistant", usage: undefined } } as any, ctx);
+      expect(setWorkingMessage).toHaveBeenLastCalledWith();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 

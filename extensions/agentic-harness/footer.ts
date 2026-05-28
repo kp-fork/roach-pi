@@ -5,6 +5,7 @@ import { basename } from "path";
 import { PLAN_PROGRESS_SPINNER_MS } from "./harness-progress.js";
 import type { FooterGlyphMode, FooterPresetName } from "./ui-settings.js";
 import { getCurrentTodos, subscribeOnChange, getTodoMarker, type SimpleTodoItem } from "./simple-todo.js";
+import { shimmerText, type ShimmerPalette } from "./shimmer.js";
 
 // Types
 
@@ -34,8 +35,14 @@ export interface CacheStats {
   totalCacheRead: number;
 }
 
+export interface ActiveToolStatus {
+  name: string;
+  intent?: string;
+  startedAt: number;
+}
+
 export interface ActiveTools {
-  running: Map<string, string>;
+  running: Map<string, string | ActiveToolStatus>;
 }
 
 type FooterSegmentId = "logo" | "path" | "git" | "model" | "thinking" | "context" | "statuses" | "tools" | "cache";
@@ -153,6 +160,29 @@ function getExtensionStatusText(statuses: ReadonlyMap<string, string>): string |
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
+const ACTIVE_TOOL_SHIMMER_PALETTE: ShimmerPalette = {
+  low: "dim",
+  mid: "accent",
+  high: "warning",
+  bold: true,
+};
+
+function normalizeActiveToolStatus(value: string | ActiveToolStatus): ActiveToolStatus {
+  return typeof value === "string"
+    ? { name: value, startedAt: 0 }
+    : value;
+}
+
+function activeToolDisplayText(values: Iterable<string | ActiveToolStatus>): string | null {
+  const tools = [...values].map(normalizeActiveToolStatus);
+  if (tools.length === 0) return null;
+  tools.sort((a, b) => b.startedAt - a.startedAt);
+  const primary = tools.find((tool) => tool.intent && tool.intent.trim().length > 0) ?? tools[0];
+  const label = primary.intent?.trim() || primary.name;
+  const suffix = tools.length > 1 ? ` +${tools.length - 1}` : "";
+  return `${label}${suffix}`;
+}
+
 function renderPowerlineLine(segments: FooterSegment[], width: number, glyphs: FooterGlyphMode): string {
   if (width <= 0 || segments.length === 0) return "";
 
@@ -234,15 +264,15 @@ export class RoachFooter implements Component {
     this.tui?.requestRender();
   }
 
-  private hasRunningPlanTasks(): boolean {
-    return getCurrentTodos().some((t) => t.status === "in_progress");
+  private hasAnimatedFooterContent(): boolean {
+    return getCurrentTodos().some((t) => t.status === "in_progress") || this.activeTools.running.size > 0;
   }
 
   private updateSpinnerTimer() {
-    const has = this.hasRunningPlanTasks();
+    const has = this.hasAnimatedFooterContent();
     if (has && !this.spinnerTimer) {
       this.spinnerTimer = setInterval(() => {
-        if (!this.hasRunningPlanTasks()) { this.updateSpinnerTimer(); return; }
+        if (!this.hasAnimatedFooterContent()) { this.updateSpinnerTimer(); return; }
         this.tui?.requestRender();
       }, PLAN_PROGRESS_SPINNER_MS);
     } else if (!has && this.spinnerTimer) {
@@ -378,10 +408,15 @@ export class RoachFooter implements Component {
       segs.set("statuses", { id: "statuses", text: statusText, icon: icons.status, color: "warning", priority: 1 });
     }
 
-    if (this.activeTools.running.size > 0) {
-      const names = [...new Set(this.activeTools.running.values())];
-      const count = this.activeTools.running.size;
-      segs.set("tools", { id: "tools", text: `${count} ${names.join(",")}`, icon: icons.tool, color: "accent", priority: 4 });
+    const activeToolText = activeToolDisplayText(this.activeTools.running.values());
+    if (activeToolText) {
+      segs.set("tools", {
+        id: "tools",
+        text: shimmerText(activeToolText, this.theme, ACTIVE_TOOL_SHIMMER_PALETTE),
+        icon: icons.tool,
+        color: "accent",
+        priority: 4,
+      });
     }
 
     return segs;

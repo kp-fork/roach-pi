@@ -1,4 +1,5 @@
-import { mkdir, readdir, readFile, rename, writeFile } from "fs/promises";
+import { copyFile, mkdir, readdir, readFile, rename, rm, writeFile } from "fs/promises";
+import { setTimeout as delay } from "node:timers/promises";
 import { dirname, join } from "path";
 import { randomBytes } from "crypto";
 import type { TeamRunOptions, TeamRunSummary, TeamTask, TeamTaskStatus } from "./team.js";
@@ -489,12 +490,38 @@ export function normalizeTeamRunRecord(record: TeamRunRecord): TeamRunRecord {
   };
 }
 
+async function replaceFile(tmp: string, file: string): Promise<void> {
+  try {
+    await rename(tmp, file);
+    return;
+  } catch (error: any) {
+    if (process.platform !== "win32" || (error?.code !== "EPERM" && error?.code !== "EEXIST")) throw error;
+  }
+
+  // Windows can reject concurrent rename/copy over an existing file while another
+  // writer still has a handle open. Last writer wins is acceptable for this state
+  // file; retry the fallback briefly instead of failing the whole write.
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      await copyFile(tmp, file);
+      await rm(tmp, { force: true });
+      return;
+    } catch (error: any) {
+      if (error?.code !== "EPERM" && error?.code !== "EBUSY") throw error;
+      lastError = error;
+      await delay(10 * (attempt + 1));
+    }
+  }
+  throw lastError;
+}
+
 export async function writeTeamRunRecord(record: TeamRunRecord, rootDir = defaultTeamRunStateRoot()): Promise<string> {
   const file = teamRunRecordPath(rootDir, record.runId);
   await mkdir(dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.${Date.now()}.${randomBytes(4).toString("hex")}.tmp`;
   await writeFile(tmp, `${JSON.stringify(normalizeTeamRunRecord(record), null, 2)}\n`, "utf-8");
-  await rename(tmp, file);
+  await replaceFile(tmp, file);
   return file;
 }
 

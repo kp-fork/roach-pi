@@ -4,8 +4,8 @@
   "description": "Agentic harness commands for clarification and planning.",
   "type": "module",
   "scripts": {
-    "test": "mkdir -p node_modules/.tmp && TMPDIR=$PWD/node_modules/.tmp vitest run",
-    "build": "tsc --noEmit"
+    "test": "node scripts/run-vitest.cjs",
+    "build": "npx --yes -p typescript@^5.9.3 tsc --noEmit"
   },
   "dependencies": {
     "@mariozechner/pi-coding-agent": "^0.72.1",

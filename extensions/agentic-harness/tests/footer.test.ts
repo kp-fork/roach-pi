@@ -153,13 +153,14 @@ describe("RoachFooter status bridge", () => {
 
     expect(lines.length).toBe(2);
     const rendered = lines.join("\n");
-    expect(rendered).toContain("powerline-project");
-    expect(rendered).toContain("main");
-    expect(rendered).toContain("test-model");
-    expect(rendered).toContain("thinking:high");
-    expect(rendered).toContain("42k/200k");
-    expect(rendered).toContain("cache 33%");
-    expect(rendered).toContain("read");
+    const plain = rendered.replace(/\x1b\[[0-9;]*m/g, "");
+    expect(plain).toContain("powerline-project");
+    expect(plain).toContain("main");
+    expect(plain).toContain("test-model");
+    expect(plain).toContain("thinking:high");
+    expect(plain).toContain("42k/200k");
+    expect(plain).toContain("cache 33%");
+    expect(plain).toContain("read");
     expectAllLinesFit(lines, 150);
   });
 
@@ -290,5 +291,51 @@ describe("RoachFooter status bridge", () => {
     const rendered = footer.render(100).join("\n");
 
     expect(rendered).not.toContain("thinking:");
+  });
+
+  it("renders active tool intent text in the tools segment", () => {
+    const footer = new RoachFooter(
+      ansiTheme,
+      footerData(),
+      {
+        cwd: "/tmp/powerline-project",
+        getModelName: () => "test-model",
+        getContextUsage: () => ({ tokens: 42_000, contextWindow: 200_000, percent: 21 }),
+        getGitStats: () => ({ ahead: 0, behind: 0, dirty: 0, untracked: 0 }),
+        getThinkingLevel: () => "high",
+        getModelInfo: () => ({ name: "test-model", isLatest: false }),
+      },
+      { totalInput: 100, totalCacheRead: 50 },
+      { running: new Map([["tool-1", { name: "read", intent: "Reading project files", startedAt: 10 }]]) },
+      null,
+    );
+
+    const rendered = footer.render(160).join("\n");
+    const plain = rendered.replace(/\x1b\[[0-9;]*m/g, "");
+
+    expect(plain).toContain("Reading project files");
+    expect(plain).not.toContain("1 read");
+  });
+
+  it("keeps footer width-safe with shimmered active tool intent", () => {
+    const footer = new RoachFooter(
+      ansiTheme,
+      footerData(),
+      {
+        cwd: "/tmp/powerline-project",
+        getModelName: () => "test-model",
+        getContextUsage: () => ({ tokens: 42_000, contextWindow: 200_000, percent: 21 }),
+        getGitStats: () => ({ ahead: 0, behind: 0, dirty: 0, untracked: 0 }),
+        getThinkingLevel: () => "high",
+        getModelInfo: () => ({ name: "test-model", isLatest: false }),
+      },
+      { totalInput: 100, totalCacheRead: 50 },
+      { running: new Map([["tool-1", { name: "bash", intent: "Running a very long command that must be truncated safely", startedAt: 10 }]]) },
+      null,
+    );
+
+    for (const width of [28, 44, 80]) {
+      expectAllLinesFit(footer.render(width), width);
+    }
   });
 });

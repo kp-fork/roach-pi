@@ -1,8 +1,9 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { createBashTool, isToolCallEventType } from "@mariozechner/pi-coding-agent";
 import { Type, type TUnsafe } from "@sinclair/typebox";
-import { RoachFooter, type CacheStats, type ActiveTools } from "./footer.js";
+import { RoachFooter, type CacheStats, type ActiveTools, type ActiveToolStatus } from "./footer.js";
 import { resolveAgenticUiSettings } from "./ui-settings.js";
+import { shimmerText, type ShimmerPalette } from "./shimmer.js";
 import { registerWelcomeCommand, showWelcomeHeader } from "./welcome-ui.js";
 import { registerEditorStashCommands } from "./editor-stash.js";
 import { installEditorComposition } from "./editor-composition.js";
@@ -155,6 +156,70 @@ const toolCallArgsById = new Map<string, Record<string, unknown>>();
 const planTaskIdsByToolCallId = new Map<string, number[]>();
 
 let harnessProgress: HarnessProgressProvider | null = null;
+const WORKING_SHIMMER_INTERVAL_MS = 80;
+const WORKING_BASE_MESSAGE = "Working…";
+const WORKING_SHIMMER_PALETTE: ShimmerPalette = {
+  low: "dim",
+  mid: "accent",
+  high: "warning",
+  bold: true,
+};
+const WORKING_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+let workingUiContext: any | null = null;
+let workingMessageBase = WORKING_BASE_MESSAGE;
+let workingMessageTimer: ReturnType<typeof setInterval> | null = null;
+
+function formatToolIntent(toolName: string, intent: unknown): string | undefined {
+  if (typeof intent === "string" && intent.trim().length > 0) return intent.trim();
+  return undefined;
+}
+
+function currentWorkingBaseMessage(activeTools: ActiveTools): string {
+  const tools = [...activeTools.running.values()]
+    .map((value) => typeof value === "string" ? { name: value, startedAt: 0 } : value)
+    .sort((a, b) => b.startedAt - a.startedAt);
+  const current = tools.find((tool) => tool.intent && tool.intent.trim().length > 0) ?? tools[0];
+  return current?.intent?.trim() || current?.name || WORKING_BASE_MESSAGE;
+}
+
+function applyWorkingMessageFrame(ctx: any): void {
+  if (!ctx?.ui?.setWorkingMessage || !ctx?.ui?.theme) return;
+  ctx.ui.setWorkingMessage(shimmerText(workingMessageBase, ctx.ui.theme, WORKING_SHIMMER_PALETTE));
+}
+
+function configureWorkingIndicator(ctx: any): void {
+  if (!ctx?.ui?.setWorkingIndicator || !ctx?.ui?.theme) return;
+  ctx.ui.setWorkingIndicator({
+    frames: WORKING_SPINNER_FRAMES.map((frame) => ctx.ui.theme.fg("accent", frame)),
+    intervalMs: WORKING_SHIMMER_INTERVAL_MS,
+  });
+}
+
+function startWorkingMessageShimmer(ctx: any): void {
+  workingUiContext = ctx;
+  configureWorkingIndicator(ctx);
+  applyWorkingMessageFrame(ctx);
+  if (workingMessageTimer) return;
+  workingMessageTimer = setInterval(() => {
+    if (workingUiContext) applyWorkingMessageFrame(workingUiContext);
+  }, WORKING_SHIMMER_INTERVAL_MS);
+}
+
+function stopWorkingMessageShimmer(): void {
+  if (workingMessageTimer) {
+    clearInterval(workingMessageTimer);
+    workingMessageTimer = null;
+  }
+  if (workingUiContext?.ui?.setWorkingMessage) workingUiContext.ui.setWorkingMessage();
+  workingUiContext = null;
+  workingMessageBase = WORKING_BASE_MESSAGE;
+}
+
+function refreshWorkingMessageFromTools(ctx: any, activeTools: ActiveTools): void {
+  workingMessageBase = currentWorkingBaseMessage(activeTools);
+  if (workingUiContext || activeTools.running.size > 0) startWorkingMessageShimmer(ctx);
+}
 function extractExplicitPlanTaskIdsFromArgs(args: unknown): number[] {
   return [...new Set(subagentItemRecords(args)
     .filter((item) => item.agent === "plan-compliance" || item.agent === "plan-worker" || item.agent === "plan-validator")
@@ -956,6 +1021,7 @@ export default function (pi: ExtensionAPI) {
   preferTodoSurfaceTools(pi);
 
   pi.on("session_shutdown", async (_event, _ctx) => {
+    stopWorkingMessageShimmer();
     harnessProgress = null;
     await cleanupActiveTeamTmuxResources();
   });
@@ -1062,7 +1128,9 @@ Do not start multi-step implementation without a clear understanding of what the
     "**CLAIMING A STEP IS DONE WITHOUT FLIPPING THE CHECKBOX AND CALLING TODOWRITE = INCOMPLETE STEP.**",
   ].join("\n");
 
-  pi.on("before_agent_start", async (event, _ctx) => {
+  pi.on("before_agent_start", async (event, ctx) => {
+    workingMessageBase = currentWorkingBaseMessage(activeTools);
+    startWorkingMessageShimmer(ctx);
     const isSkillInvocation = SKILL_INVOCATION_RE.test(event.prompt ?? "");
     const phaseGuidance = (isRootSession && !isSkillInvocation) ? PHASE_GUIDANCE[currentPhase] : "";
     const idleGuidance = (isRootSession && !isSkillInvocation && currentPhase === "idle" && !clarificationDone)
@@ -1071,7 +1139,7 @@ Do not start multi-step implementation without a clear understanding of what the
 
     let delegationInfo = "";
     if (depthConfig.canDelegate && !isTeamWorker) {
-      const agentList = (await discoverAgents(_ctx.cwd || ".", "user", BUNDLED_AGENTS_DIR))
+      const agentList = (await discoverAgents(ctx.cwd || ".", "user", BUNDLED_AGENTS_DIR))
         .map((a) => `- **${a.name}**: ${a.description}`)
         .join("\n");
       delegationInfo = `\n\n## Delegation Guards\n- Current depth: ${depthConfig.currentDepth}, max: ${depthConfig.maxDepth}\n- Cycle prevention: ${depthConfig.preventCycles ? "enabled" : "disabled"}\n- Ancestor stack: ${depthConfig.ancestorStack.length > 0 ? depthConfig.ancestorStack.join(" -> ") : "(root)"}\n\n## Available Subagents\n${agentList}`;
@@ -1772,11 +1840,17 @@ Do not start multi-step implementation without a clear understanding of what the
         cacheStats.totalInput += usage.input;
         cacheStats.totalCacheRead += usage.cacheRead;
       }
+      stopWorkingMessageShimmer();
     }
   });
 
   pi.on("tool_execution_start", async (event, ctx) => {
-    activeTools.running.set(event.toolCallId, event.toolName);
+    activeTools.running.set(event.toolCallId, {
+      name: event.toolName,
+      intent: formatToolIntent(event.toolName, (event as any).intent),
+      startedAt: Date.now(),
+    } satisfies ActiveToolStatus);
+    refreshWorkingMessageFromTools(ctx, activeTools);
 
     if (event.toolName === "subagent") {
       const args = getToolExecutionArgs(event, toolCallArgsById.get(event.toolCallId));
@@ -1793,6 +1867,7 @@ Do not start multi-step implementation without a clear understanding of what the
 
   pi.on("tool_execution_end", async (event, ctx) => {
     activeTools.running.delete(event.toolCallId);
+    refreshWorkingMessageFromTools(ctx, activeTools);
 
     if (event.toolName === "subagent") {
       const args = getToolExecutionArgs(event, toolCallArgsById.get(event.toolCallId));
@@ -1821,6 +1896,7 @@ Do not start multi-step implementation without a clear understanding of what the
     cacheStats.totalInput = 0;
     cacheStats.totalCacheRead = 0;
     activeTools.running.clear();
+    stopWorkingMessageShimmer();
     toolCallArgsById.clear();
     planTaskIdsByToolCallId.clear();
     const branchEntries = ctx.sessionManager?.getBranch?.() ?? [];

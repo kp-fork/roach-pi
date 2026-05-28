@@ -2,6 +2,10 @@ import { execFile, type ExecFileOptions } from "child_process";
 import { randomBytes } from "crypto";
 import { mkdir } from "fs/promises";
 import { join } from "path";
+
+function toPortablePath(path: string): string {
+  return path.replace(/\\/g, "/");
+}
 import { shellQuote } from "./shell.js";
 
 export interface TmuxAvailability {
@@ -245,8 +249,8 @@ export async function createWorkerPanes(options: CreateWorkerPanesOptions): Prom
       )[0];
       if (!paneId) throw new Error(`tmux did not return a pane id for worker ${index}`);
 
-      const logFile = join(options.logDir, `task-${index}.log`);
-      const eventLogFile = join(options.logDir, `task-${index}.events.jsonl`);
+      const logFile = toPortablePath(join(options.logDir, `task-${index}.log`));
+      const eventLogFile = toPortablePath(join(options.logDir, `task-${index}.events.jsonl`));
       await pipePane(commandRunner, binary, paneId, logFile);
       paneRefs.push({
         sessionName: currentContext.sessionName,
@@ -293,8 +297,8 @@ export async function createWorkerPanes(options: CreateWorkerPanesOptions): Prom
     await enableMouseScrolling(commandRunner, binary, sessionName);
   }
 
-  const firstLogFile = join(options.logDir, "task-1.log");
-  const firstEventLogFile = join(options.logDir, "task-1.events.jsonl");
+  const firstLogFile = toPortablePath(join(options.logDir, "task-1.log"));
+  const firstEventLogFile = toPortablePath(join(options.logDir, "task-1.events.jsonl"));
   await pipePane(commandRunner, binary, firstPaneId, firstLogFile);
   paneRefs.push({
     sessionName,
@@ -314,8 +318,8 @@ export async function createWorkerPanes(options: CreateWorkerPanesOptions): Prom
     )[0];
     if (!paneId) throw new Error(`tmux did not return a pane id for worker ${index}`);
 
-    const logFile = join(options.logDir, `task-${index}.log`);
-    const eventLogFile = join(options.logDir, `task-${index}.events.jsonl`);
+    const logFile = toPortablePath(join(options.logDir, `task-${index}.log`));
+    const eventLogFile = toPortablePath(join(options.logDir, `task-${index}.events.jsonl`));
     await pipePane(commandRunner, binary, paneId, logFile);
     paneRefs.push({
       sessionName,

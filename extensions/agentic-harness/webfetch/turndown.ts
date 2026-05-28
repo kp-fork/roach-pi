@@ -12,7 +12,6 @@ export async function getTurndownService(
   const promise = (async () => {
     const [turndownMod, gfmMod] = await Promise.all([
       import("turndown"),
-      // @ts-expect-error no type declarations for turndown-plugin-gfm
       import("turndown-plugin-gfm"),
     ]);
 
