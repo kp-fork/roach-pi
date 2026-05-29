@@ -10,12 +10,14 @@
   <strong>Engineering discipline, agentic orchestration, and power-user tools for the pi coding agent.</strong>
 </p>
 
+<p align="center"><strong>Eight</strong> bundled extensions · <strong>MIT</strong> license · <strong>pi 0.72.x</strong> · <strong>40+</strong> language servers · <strong>TypeScript</strong></p>
+
 <p align="center">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-keep-22C55E?style=flat&colorA=111827" alt="Changelog"></a>
-  <a href="package.json"><img src="https://img.shields.io/badge/license-MIT-58A6FF?style=flat&colorA=111827" alt="MIT license"></a>
-  <a href="https://github.com/badlogic/pi-mono"><img src="https://img.shields.io/badge/pi-0.72.x-A78BFA?style=flat&colorA=111827" alt="pi 0.72.x"></a>
-  <a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat&colorA=111827&logo=typescript&logoColor=white" alt="TypeScript"></a>
-  <a href="package.json"><img src="https://img.shields.io/badge/search-FFF-F97316?style=flat&colorA=111827" alt="FFF search"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-keep-3FB950?style=flat&colorA=17141C" alt="Changelog"></a>
+  <a href="package.json"><img src="https://img.shields.io/badge/license-MIT-56C5E8?style=flat&colorA=17141C" alt="MIT license"></a>
+  <a href="https://github.com/badlogic/pi-mono"><img src="https://img.shields.io/badge/pi-0.72.x-8B5CF6?style=flat&colorA=17141C" alt="pi 0.72.x"></a>
+  <a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-D6409F?style=flat&colorA=17141C&logo=typescript&logoColor=white" alt="TypeScript"></a>
+  <a href="package.json"><img src="https://img.shields.io/badge/search-FFF-E64F9E?style=flat&colorA=17141C" alt="FFF search"></a>
 </p>
 
 <p align="center">
@@ -27,18 +29,19 @@
 ## Table of Contents
 
 - [What is ROACH PI?](#what-is-roach-pi)
-- [Architecture](#architecture)
+- [Architecture](#eight-extensions-one-loop)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
-- [Clarify and Goal](#clarify-and-goal)
-- [Subagent Orchestration](#subagent-orchestration)
-- [Review](#review)
-- [FFF Search](#fff-search)
+- [Clarify and Goal](#clarify-then-goal)
+- [Subagent Orchestration](#delegate-in-parallel)
+- [Review](#catch-it-before-it-ships)
+- [FFF Search](#search-git-aware)
 - [LSP Code Intelligence](#lsp-code-intelligence)
 - [MCP Adapter](#mcp-adapter)
-- [Workspace Memory](#workspace-memory)
-- [Session Loop](#session-loop)
+- [Workspace Memory](#memory-that-recalls)
+- [Session Loop](#loops-that-self-clean)
 - [Nested AGENTS.md](#nested-agentsmd)
+- [Code Previews](#previews-that-highlight)
 - [Commands Reference](#commands-reference)
 - [Tools Reference](#tools-reference)
 - [Configuration](#configuration)
@@ -48,7 +51,7 @@
 
 ---
 
-## What is ROACH PI?
+## What is _ROACH PI_?
 
 ROACH PI is an extension suite for the pi coding agent. It turns a normal coding session into a disciplined engineering loop:
 
@@ -60,9 +63,9 @@ It is intentionally inspectable: commands, tools, hooks, agents, and skills are 
 
 ---
 
-## Architecture
+## Eight extensions, _one loop_.
 
-Seven bundled extensions, one disciplined engineering loop:
+Eight bundled extensions, one disciplined engineering loop:
 
 <p align="center">
   <img src="assets/architecture-overview.svg" alt="ROACH PI extension architecture overview" width="88%">
@@ -121,7 +124,7 @@ Quick system checks for visibility:
 
 ---
 
-## Clarify and Goal
+## Clarify, then _goal_.
 
 Vague requests should not become vague code.
 
@@ -141,7 +144,7 @@ The output is a **Goal Contract** — a structured summary of the objective, sco
 
 ---
 
-## Subagent Orchestration
+## Delegate, in _parallel_.
 
 The `subagent` tool delegates work to specialized agents running as separate `pi` processes.
 
@@ -162,7 +165,7 @@ Async subagents support `asyncDependency: "needed-before-final"` when the lead a
 
 ---
 
-## Review
+## Catch it, _before it ships_.
 
 Catch problems before they ship.
 
@@ -174,7 +177,7 @@ Catch problems before they ship.
 
 ---
 
-## FFF Search
+## Search, _git-aware_.
 
 The bundled FFF extension upgrades pi's file and content search with git-aware ranking and frecency.
 
@@ -237,7 +240,7 @@ Configuration reads standard MCP files automatically: `~/.config/mcp/mcp.json`, 
 
 ---
 
-## Workspace Memory
+## Memory that _recalls_.
 
 <p align="center">
   <img src="assets/lsp-memory-preview.svg" alt="ROACH PI LSP tools and workspace memory save/recall flow" width="88%">
@@ -258,7 +261,7 @@ The LLM-callable `memory_save` tool is used after bug fixes, decisions, or usefu
 
 ---
 
-## Session Loop
+## Loops that _self-clean_.
 
 **`/loop`** schedules recurring prompts inside the current session — useful for health checks, monitoring, or continuous verification:
 
@@ -277,9 +280,6 @@ Jobs are session-scoped, error-isolated, timeout-protected, and cleaned up on sh
 
 ---
 
-
----
-
 ## Nested `AGENTS.md`
 
 The bundled nested-agents extension injects nearby directory-level `AGENTS.md` files whenever the agent reads a file. This lets each subtree carry local conventions without forcing you to paste them into every prompt.
@@ -288,6 +288,12 @@ The bundled nested-agents extension injects nearby directory-level `AGENTS.md` f
 /nested-agents           Toggle the nested AGENTS.md context widget
 pi --no-nested-agents    Disable at startup
 ```
+
+---
+
+## Previews that _highlight_.
+
+The bundled `pi-code-previews` extension renders syntax-highlighted previews for pi tool calls, so code and diffs in tool output read like an editor instead of plain text. Highlighting is powered by [shiki](https://shiki.style).
 
 ---
 
@@ -361,7 +367,7 @@ pi --no-nested-agents    Disable at startup
 | `multi_grep` | Multi-pattern OR content search |
 | `memory_save` | Save structured workspace memories |
 | `team` | Optional team orchestration (gated by `PI_ENABLE_TEAM_MODE=1`) |
-| `lsp_*` | Diiagnostics, definitions, references, symbols, and rename |
+| `lsp_*` | Diagnostics, definitions, references, symbols, and rename |
 | `mcp` | MCP proxy — search, describe, and call MCP server tools |
 
 ---
@@ -435,6 +441,7 @@ extensions/
   fff-search/          # FFF-backed find/grep/multi_grep and @ autocomplete
   session-loop/        # recurring session prompts
   workspace-memory/    # save/recall workspace memory
+  pi-code-previews/    # syntax-highlighted tool-call previews (shiki)
 docs/engineering-discipline/
   context/             # Context Briefs
   plans/               # implementation plans
@@ -442,7 +449,7 @@ docs/engineering-discipline/
 assets/                # README visuals
 ```
 
-Bundled package dependencies also include `pi-lsp-client`, `pi-mcp-adapter`, and `@code-yeongyu/pi-nested-agents-md`.
+Bundled package dependencies also include `pi-lsp-client`, `pi-mcp-adapter`, `@code-yeongyu/pi-nested-agents-md`, and `shiki` (powering `pi-code-previews`).
 
 ---
 
@@ -463,7 +470,10 @@ npm --prefix extensions/agentic-harness test && npm --prefix extensions/agentic-
 npm --prefix extensions/fff-search test && npm --prefix extensions/fff-search run build
 npm --prefix extensions/session-loop test && npm --prefix extensions/session-loop run build
 npm --prefix extensions/workspace-memory test && npm --prefix extensions/workspace-memory run build
+npm --prefix extensions/pi-code-previews test && npm --prefix extensions/pi-code-previews run check
 ```
+
+`pi-code-previews` exposes `check` (typecheck + lint + format) instead of `build`; the rest expose `build` (`tsc --noEmit`).
 
 There is no root `npm test` script in `package.json`; use the extension-level commands above.
 
