@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.34.0](https://github.com/tmdgusya/roach-pi/compare/v1.33.0...v1.34.0) (2026-05-29)
+
+### Features
+
+* **agentic-harness:** remove /ultrareview deep-review command ([c93a564](https://github.com/tmdgusya/roach-pi/commit/c93a564f864dae8d037ab2f101e177d0d9807bb9))
+
+### Documentation
+
+* update hero goal runtime flow ([7733ea4](https://github.com/tmdgusya/roach-pi/commit/7733ea4268ce753bbb109eec9c1329e9967b5b36))
+* update workflow preview graphic ([d8659de](https://github.com/tmdgusya/roach-pi/commit/d8659de9d7b8f5839926149ac0efb69146e96f3d))
+* use renamed goal workflow graphic ([88acea8](https://github.com/tmdgusya/roach-pi/commit/88acea8ac2d293c3533d2781d9ab3c3cf4aab864))
+
 ## [1.33.0](https://github.com/tmdgusya/roach-pi/compare/v1.32.0...v1.33.0) (2026-05-28)
 
 ### Features
