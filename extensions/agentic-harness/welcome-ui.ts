@@ -2,6 +2,7 @@ import type { Component, TUI } from "@mariozechner/pi-tui";
 import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@mariozechner/pi-coding-agent";
 import { keyHint, keyText, rawKeyHint } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
+import { SHIMMER_SWEEP_MS } from "./shimmer.js";
 
 export type HeaderFactory = (tui: TUI, theme: Theme) => Component & { dispose?(): void };
 
@@ -12,20 +13,122 @@ export type HeaderUi = {
 
 let welcomeVisible = true;
 
-export function createWelcomeHeader(): HeaderFactory {
-  return (_tui, theme) => {
-    const banner = [
-      "██████╗  ██████╗  █████╗  ██████╗██╗  ██╗    ██████╗ ██╗",
-      "██╔══██╗██╔═══██╗██╔══██╗██╔════╝██║  ██║    ██╔══██╗██║",
-      "██████╔╝██║   ██║███████║██║     ███████║    ██████╔╝██║",
-      "██╔══██╗██║   ██║██╔══██║██║     ██╔══██║    ██╔═══╝ ██║",
-      "██║  ██║╚██████╔╝██║  ██║╚██████╗██║  ██║    ██║     ██║",
-      "╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝    ╚═╝     ╚═╝",
-    ].map((line) => theme.bold(theme.fg("accent", line))).join("\n");
+const BANNER_LINES = [
+  "██████╗  ██████╗  █████╗  ██████╗██╗  ██╗    ██████╗ ██╗",
+  "██╔══██╗██╔═══██╗██╔══██╗██╔════╝██║  ██║    ██╔══██╗██║",
+  "██████╔╝██║   ██║███████║██║     ███████║    ██████╔╝██║",
+  "██╔══██╗██║   ██║██╔══██║██║     ██╔══██║    ██╔═══╝ ██║",
+  "██║  ██║╚██████╔╝██║  ██║╚██████╗██║  ██║    ██║     ██║",
+  "╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝    ╚═╝     ╚═╝",
+];
 
-    const tagline = theme.fg("dim", "Engineering Discipline Extension");
-    const tipLine = theme.fg("muted", "Tip: Always start with /clarify. Then activate a durable /goal.");
-    const clarifyLine = theme.fg("dim", "Never skip /clarify — it prevents wasted effort.");
+const WELCOME_SHIMMER_FRAME_MS = 80;
+const WELCOME_SHIMMER_PHASE_OFFSET_MS = 350;
+
+const ANSI_RESET = "\x1b[0m";
+const ANSI_BOLD = "\x1b[1m";
+const BANNER_BASE_STOPS = ["#00d7d7", "#d7af5f", "#78ebeb"] as const;
+const BANNER_CREST = "#f5ffff";
+
+type WelcomeTheme = Theme & { getFgAnsi?: Theme["getFgAnsi"] };
+
+type Rgb = { r: number; g: number; b: number };
+
+function parseHexColor(hex: string): Rgb {
+  const normalized = hex.startsWith("#") ? hex.slice(1) : hex;
+  return {
+    r: Number.parseInt(normalized.slice(0, 2), 16),
+    g: Number.parseInt(normalized.slice(2, 4), 16),
+    b: Number.parseInt(normalized.slice(4, 6), 16),
+  };
+}
+
+function mixRgb(a: Rgb, b: Rgb, t: number): Rgb {
+  const clamped = Math.max(0, Math.min(1, t));
+  const mix = (x: number, y: number) => Math.round(x + (y - x) * clamped);
+  return { r: mix(a.r, b.r), g: mix(a.g, b.g), b: mix(a.b, b.b) };
+}
+
+function gradientColorAt(pos: number, stops: readonly string[]): Rgb {
+  if (stops.length === 0) return parseHexColor(BANNER_CREST);
+  if (stops.length === 1) return parseHexColor(stops[0]);
+  const clamped = Math.max(0, Math.min(1, pos));
+  const scaled = clamped * (stops.length - 1);
+  const lo = Math.min(Math.floor(scaled), stops.length - 2);
+  return mixRgb(parseHexColor(stops[lo]), parseHexColor(stops[lo + 1]), scaled - lo);
+}
+
+function fgAnsi(color: Rgb): string {
+  return `\x1b[38;2;${color.r};${color.g};${color.b}m`;
+}
+
+function renderStaticBanner(theme: Theme): string {
+  return BANNER_LINES.map((line) => theme.bold(theme.fg("accent", line))).join("\n");
+}
+
+function renderShimmerBanner(phaseMs: number): string {
+  const artWidth = Math.max(...BANNER_LINES.map((line) => Array.from(line).length));
+  const rows = BANNER_LINES.length;
+  const period = artWidth + rows + 8;
+  const center = (((phaseMs / SHIMMER_SWEEP_MS) * period) % period + period) % period;
+  const crest = parseHexColor(BANNER_CREST);
+  const sigma = 5.0;
+
+  return BANNER_LINES.map((line, y) => {
+    const chars = Array.from(line);
+    return chars.map((char, x) => {
+      const fgPos = (x / Math.max(1, artWidth)) * 0.6 + (y / Math.max(1, rows)) * 0.4;
+      const base = gradientColorAt(fgPos, BANNER_BASE_STOPS);
+      const d = x + y - center;
+      const glow = Math.exp(-(d * d) / (2 * sigma * sigma)) * 0.92;
+      return `${fgAnsi(mixRgb(base, crest, glow))}${ANSI_BOLD}${char}${ANSI_RESET}`;
+    }).join("");
+  }).join("\n");
+}
+
+function canRenderShimmer(theme: WelcomeTheme): theme is Theme {
+  return typeof theme.getFgAnsi === "function";
+}
+
+class WelcomeHeaderComponent implements Component {
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private animating: boolean;
+  private readonly startedAt = Date.now();
+
+  constructor(private readonly tui: Pick<TUI, "requestRender">, private readonly theme: WelcomeTheme) {
+    this.animating = canRenderShimmer(theme);
+    if (this.animating) {
+      this.timer = setInterval(() => this.tick(), WELCOME_SHIMMER_FRAME_MS);
+      this.timer.unref?.();
+    }
+  }
+
+  dispose(): void {
+    this.stopTimer();
+    this.animating = false;
+  }
+
+  invalidate(): void {}
+
+  render(width: number): string[] {
+    return new Text(this.content(), 1, 0).render(width);
+  }
+
+  private tick(): void {
+    this.tui.requestRender();
+  }
+
+  private stopTimer(): void {
+    if (!this.timer) return;
+    clearInterval(this.timer);
+    this.timer = null;
+  }
+
+  private content(): string {
+    const banner = this.renderBanner();
+    const tagline = this.theme.fg("dim", "Engineering Discipline Extension");
+    const tipLine = this.theme.fg("muted", "Tip: Always start with /clarify. Then activate a durable /goal.");
+    const clarifyLine = this.theme.fg("dim", "Never skip /clarify — it prevents wasted effort.");
     const hints = [
       keyHint("app.interrupt", "to interrupt"),
       keyHint("app.clear", "to clear"),
@@ -35,8 +138,21 @@ export function createWelcomeHeader(): HeaderFactory {
       rawKeyHint("!", "to run bash"),
     ].join("\n");
 
-    return new Text(`\n${banner}\n${tagline}\n\n${tipLine}\n${clarifyLine}\n\n${hints}`, 1, 0);
-  };
+    return `\n${banner}\n${tagline}\n\n${tipLine}\n${clarifyLine}\n\n${hints}`;
+  }
+
+  private renderBanner(): string {
+    if (!this.animating || !canRenderShimmer(this.theme)) {
+      this.animating = false;
+      this.stopTimer();
+      return renderStaticBanner(this.theme);
+    }
+    return renderShimmerBanner(Date.now() - this.startedAt + WELCOME_SHIMMER_PHASE_OFFSET_MS);
+  }
+}
+
+export function createWelcomeHeader(): HeaderFactory {
+  return (tui, theme) => new WelcomeHeaderComponent(tui, theme);
 }
 
 export function showWelcomeHeader(ui: HeaderUi): void {

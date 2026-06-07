@@ -1,7 +1,7 @@
 import type { Theme, ThemeColor } from "@mariozechner/pi-coding-agent";
 
 const CLASSIC_PADDING = 10;
-const CLASSIC_SWEEP_MS = 1400;
+export const SHIMMER_SWEEP_MS = 1400;
 const CLASSIC_BAND_HALF_WIDTH = 6;
 const TIER_HIGH = 0.65;
 const TIER_MID = 0.22;
@@ -38,7 +38,7 @@ function resolveTierAnsi(theme: ShimmerTheme, tier: ShimmerPaletteTier): string 
 
 function classicIntensity(time: number, index: number, length: number): number {
   const period = length + CLASSIC_PADDING * 2;
-  const pos = ((time % CLASSIC_SWEEP_MS) / CLASSIC_SWEEP_MS) * period;
+  const pos = ((time % SHIMMER_SWEEP_MS) / SHIMMER_SWEEP_MS) * period;
   const dist = Math.abs(index + CLASSIC_PADDING - pos);
   if (dist >= CLASSIC_BAND_HALF_WIDTH) return 0;
   return 0.5 * (1 + Math.cos((Math.PI * dist) / CLASSIC_BAND_HALF_WIDTH));
