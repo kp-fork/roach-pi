@@ -198,7 +198,15 @@ let currentClarificationCompactionSummary: string | null = null;
 let latestClarificationState: ClarificationState | null = null;
 let latestClarificationRootDir: string | null = null;
 const goalFooterInvalidators = new Set<() => void>();
-const WORKING_SHIMMER_INTERVAL_MS = 80;
+// The braille spinner's rotation cadence. Discrete frames, so the interval IS
+// the rotation speed — kept at 80ms (12.5fps) intentionally (extension.test.ts
+// pins this). Driving it faster just makes the glyph spin faster, not smoother.
+const WORKING_INDICATOR_INTERVAL_MS = 80;
+// The text-shimmer sampling cadence. The shimmer band moves at a speed set by
+// SHIMMER_SWEEP_MS (time-based), so sampling it more often only smooths the
+// SAME sweep — it does not speed it up. 33ms ≈ 30fps; the prior 80ms (12.5fps)
+// made the "Working…" gradient look choppy, matching the welcome banner.
+const WORKING_SHIMMER_INTERVAL_MS = 33;
 const WORKING_BASE_MESSAGE = "Working…";
 const WORKING_SHIMMER_PALETTE: ShimmerPalette = {
   low: "dim",
@@ -234,7 +242,7 @@ function configureWorkingIndicator(ctx: any): void {
   if (!ctx?.ui?.setWorkingIndicator || !ctx?.ui?.theme) return;
   ctx.ui.setWorkingIndicator({
     frames: WORKING_SPINNER_FRAMES.map((frame) => ctx.ui.theme.fg("accent", frame)),
-    intervalMs: WORKING_SHIMMER_INTERVAL_MS,
+    intervalMs: WORKING_INDICATOR_INTERVAL_MS,
   });
 }
 
@@ -242,6 +250,11 @@ function startWorkingMessageShimmer(ctx: any): void {
   workingUiContext = ctx;
   configureWorkingIndicator(ctx);
   applyWorkingMessageFrame(ctx);
+  // Guard against double-start: before_agent_start fires per turn and
+  // refreshWorkingMessageFromTools fires per tool start/end, but a single
+  // interval drives the animation. Verified lifecycle: started in
+  // before_agent_start, stopped in the assistant turn-end handler, plus
+  // session_start and session_shutdown — so it does NOT outlive a turn.
   if (workingMessageTimer) return;
   workingMessageTimer = setInterval(() => {
     if (workingUiContext) applyWorkingMessageFrame(workingUiContext);

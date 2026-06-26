@@ -22,7 +22,7 @@ const BANNER_LINES = [
   "╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝    ╚═╝     ╚═╝",
 ];
 
-const WELCOME_SHIMMER_FRAME_MS = 80;
+const WELCOME_SHIMMER_FRAME_MS = 33;
 const WELCOME_SHIMMER_PHASE_OFFSET_MS = 350;
 
 const ANSI_RESET = "\x1b[0m";
@@ -98,6 +98,12 @@ class WelcomeHeaderComponent implements Component {
   constructor(private readonly tui: Pick<TUI, "requestRender">, private readonly theme: WelcomeTheme) {
     this.animating = canRenderShimmer(theme);
     if (this.animating) {
+      // Frame interval controls SMOOTHNESS only. The sweep speed is set by
+      // SHIMMER_SWEEP_MS and is time-based (phase = Date.now()-startedAt), so
+      // sampling it more often just makes the same sweep look smoother — it
+      // does not speed it up. 33ms ≈ 30fps; pi-tui's render throttle is 16ms
+      // and renderShimmerBanner (~300 cells of cheap math) is microsecond-scale,
+      // so this stays light. The prior 80ms (12.5fps) looked choppy.
       this.timer = setInterval(() => this.tick(), WELCOME_SHIMMER_FRAME_MS);
       this.timer.unref?.();
     }
