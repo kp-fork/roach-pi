@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.40.0](https://github.com/tmdgusya/roach-pi/compare/v1.39.0...v1.40.0) (2026-07-08)
+
+### Features
+
+* **agentic-harness:** forge→hammer autonomous goal pipeline ([8905afa](https://github.com/tmdgusya/roach-pi/commit/8905afa3090555075527f498bd7c420a2932bc34))
+
+### Documentation
+
+* **engineering-discipline:** forge→hammer planning and execution records ([f015abb](https://github.com/tmdgusya/roach-pi/commit/f015abbd99e1063ff62e4152b0dc884d6abeedf4))
+
+### Miscellaneous
+
+* sync package-lock version metadata ([63fef60](https://github.com/tmdgusya/roach-pi/commit/63fef6034e95ce186c2bef7402806f0879d21d8d))
+
 ## [1.39.0](https://github.com/tmdgusya/roach-pi/compare/v1.38.0...v1.39.0) (2026-06-26)
 
 ### Features
