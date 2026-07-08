@@ -148,6 +148,6 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function formatList(items: string[]): string {
-  return items.length > 0 ? items.map((item) => `- ${item}`).join("\n") : "- (none)";
+export function formatList(items: string[], emptyText = "- (none)"): string {
+  return items.length > 0 ? items.map((item) => `- ${item}`).join("\n") : emptyText;
 }

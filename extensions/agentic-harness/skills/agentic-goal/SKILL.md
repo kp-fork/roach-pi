@@ -27,6 +27,12 @@ For `/goal <request>`, silently decide whether the request needs durable goal ru
 - Complex implementation, multi-step work, ambiguous scope, or work needing completion evidence/verifier PASS: begin deep clarification and produce a Goal Contract before activation.
 - If uncertain, prefer clarification for complex or ambiguous work.
 
+## Who Implements
+
+For goals started via autostart (flagged with the worker→validator gate), the runtime implements each subgoal through an isolated worker→validator loop: the durable runtime dispatches an isolated worker subagent to implement the subgoal and an information-isolated validator subagent to judge it, then records the receipt and completion itself. In that mode, do not implement subgoals yourself; advance the runtime by running /goal (no arguments) until the goal completes or the runtime escalates.
+
+For small tasks, prefer the manual /goal create → activate → complete path instead of autostart.
+
 ## Workflow
 
 1. Inspect `/goal status`.
@@ -37,7 +43,7 @@ For `/goal <request>`, silently decide whether the request needs durable goal ru
 6. Request completion with `/goal complete <targetId>`.
 7. Follow the verifier outcome:
    - Subgoal PASS: continue with the next runtime-provided subgoal.
-   - Goal PASS: stop; the active goal is complete.
+   - Goal verifier PASS: for review-gated goals the runtime opens the security/qa review panel; the goal completes only when security and qa both PASS, and any review FAIL recycles into fix subgoals driven by the worker→validator loop.
    - FAIL: address blockers, record new evidence, and request completion again.
 
 ## Durable State Handoff

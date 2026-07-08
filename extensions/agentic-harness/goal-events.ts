@@ -30,6 +30,13 @@ function isPriority(value: unknown): boolean {
   return value === "high" || value === "medium" || value === "low";
 }
 
+function isGates(value: unknown): boolean {
+  return isRecord(value)
+    && (value.panel === undefined || typeof value.panel === "boolean")
+    && (value.validator === undefined || typeof value.validator === "boolean")
+    && (value.review === undefined || typeof value.review === "boolean");
+}
+
 function isVerifierReceipt(value: unknown): boolean {
   return isRecord(value)
     && typeof value.id === "string"
@@ -39,6 +46,22 @@ function isVerifierReceipt(value: unknown): boolean {
     && (value.verdict === "PASS" || value.verdict === "FAIL")
     && typeof value.verifiedAt === "string"
     && value.verifierAgent === "reviewer-verifier"
+    && typeof value.summary === "string"
+    && isStringArray(value.blockers)
+    && isStringArray(value.commandsRun)
+    && isStringArray(value.evidence)
+    && typeof value.rawOutput === "string";
+}
+
+function isValidatorReceipt(value: unknown): boolean {
+  return isRecord(value)
+    && typeof value.id === "string"
+    && value.targetType === "subgoal"
+    && typeof value.targetId === "string"
+    && typeof value.objectiveHash === "string"
+    && (value.verdict === "PASS" || value.verdict === "FAIL")
+    && typeof value.recordedAt === "string"
+    && value.validatorAgent === "plan-validator"
     && typeof value.summary === "string"
     && isStringArray(value.blockers)
     && isStringArray(value.commandsRun)
@@ -61,10 +84,25 @@ export function isGoalCommand(value: unknown): value is GoalCommand {
         && (goal.priority === undefined || isPriority(goal.priority))
         && (goal.successCriteria === undefined || isStringArray(goal.successCriteria))
         && (goal.constraints === undefined || isStringArray(goal.constraints))
-        && (goal.evidenceRequired === undefined || isStringArray(goal.evidenceRequired));
+        && (goal.evidenceRequired === undefined || isStringArray(goal.evidenceRequired))
+        && (goal.gates === undefined || isGates(goal.gates));
     }
     case "activate_goal":
       return typeof value.goalId === "string";
+    case "open_panel": {
+      const panel = value.panel;
+      return isRecord(panel)
+        && typeof panel.panelId === "string"
+        && typeof panel.purpose === "string"
+        && isStringArray(panel.expectedMembers);
+    }
+    case "record_panel_verdict":
+      return typeof value.panelId === "string"
+        && typeof value.member === "string"
+        && (value.verdict === "APPROVE" || value.verdict === "REJECT")
+        && (value.findings === undefined || typeof value.findings === "string");
+    case "activate_goal_gated":
+      return typeof value.goalId === "string" && typeof value.panelId === "string";
     case "create_subgoal": {
       const subgoal = value.subgoal;
       return isRecord(subgoal)
@@ -81,6 +119,8 @@ export function isGoalCommand(value: unknown): value is GoalCommand {
       return isTargetType(value.targetType) && typeof value.targetId === "string";
     case "record_verifier_result":
       return isVerifierReceipt(value.receipt);
+    case "record_validator_receipt":
+      return isValidatorReceipt(value.receipt);
     case "pause_goal":
     case "resume_goal":
     case "cancel_goal":

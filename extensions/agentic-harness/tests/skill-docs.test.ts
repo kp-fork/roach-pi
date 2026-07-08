@@ -38,6 +38,16 @@ describe("goal skill docs", () => {
     expect(src).toContain("/goal evidence");
     expect(src).toContain("verifier subagent returns PASS");
     expect(src).toContain("verifier returns FAIL");
+    // M5: for flagged (worker→validator) goals the RUNTIME implements subgoals;
+    // the main agent only advances /goal
+    expect(src).toContain("the runtime implements each subgoal through an isolated worker→validator loop");
+    expect(src).toContain("do not implement subgoals yourself; advance the runtime by running /goal");
+    expect(src).toContain("prefer the manual /goal create → activate → complete path");
+    // M6: goal completion is review-gated — the security/qa review panel runs after
+    // the goal verifier PASS, and review FAIL recycles into fix subgoals
+    expect(src).toContain("the runtime opens the security/qa review panel");
+    expect(src).toContain("review FAIL recycles into fix subgoals");
+    expect(src).not.toContain("Goal PASS: stop");
     for (const legacySkillName of legacySkillNames) {
       expect(src).not.toContain(legacySkillName);
     }
@@ -64,6 +74,20 @@ describe("clarification skill goal handoff", () => {
     expect(src).not.toContain("Run in parallel with user Q&A");
     expect(src.toLowerCase()).toContain("success criteria");
     expect(src.toLowerCase()).toContain("evidence required");
+    // recon-before-questions
+    expect(src).toContain("The user should never be asked something the codebase can answer.");
+    // single bundled ≤4-question round
+    expect(src).toContain("ONE ask_user_question round");
+    expect(src).toContain("up to 4 independent questions");
+    // defensible defaults + ASSUMPTION literal
+    expect(src).toContain("Prefer proposing a defensible default over asking.");
+    expect(src).toContain("ASSUMPTION:");
+    // one-question-at-a-time language must be gone
+    expect(src).not.toContain("One question per message");
+    expect(src).not.toContain("Never bundle multiple questions");
+    expect(src).not.toContain("Ask user ONE question");
+    expect(src).not.toContain("Ask ONE question");
+    expect(src).not.toContain("Five questions in one message");
     expect(src).not.toContain(legacySkillNames[0]);
     expect(src).not.toContain(legacySkillNames[2]);
     expect(src).not.toContain(removedPlanRoute);

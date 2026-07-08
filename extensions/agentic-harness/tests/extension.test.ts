@@ -850,6 +850,60 @@ describe("/clarify Command", () => {
     expect(prompt).not.toContain("investigate relevant parts of the codebase in parallel");
     expect(prompt).toContain("clarification_state");
     expect(prompt).toContain("Gate: PASS");
+    expect(prompt).not.toContain("Ask ONE question");
+    expect(prompt).toContain("Bundle up to 4 independent questions into ONE ask_user_question round after recon");
+    expect(prompt).toContain("ASSUMPTION:");
+    expect(prompt).not.toContain("an exact /goal handoff and stop");
+    expect(prompt).toContain("the runtime queues an automatic /goal start for your review");
+  });
+
+  it("no-topic root kickoff uses the bundled-round instruction", async () => {
+    const { mockPi, commands } = createMockPi();
+    extension(mockPi);
+
+    const clarify = commands.get("clarify");
+    const mockCtx: any = {
+      cwd: await tempDir(),
+      runId: "clarify-run-no-topic",
+      sessionManager: { appendCustomEntry: vi.fn() },
+      ui: {
+        confirm: vi.fn().mockResolvedValue(true),
+        setStatus: vi.fn(),
+      },
+    };
+
+    await clarify.handler("", mockCtx);
+
+    expect(mockPi.sendUserMessage).toHaveBeenCalledTimes(1);
+    const prompt = mockPi.sendUserMessage.mock.calls[0][0];
+    expect(prompt).not.toContain("Ask ONE question");
+    expect(prompt).toContain("Bundle up to 4 independent questions into ONE ask_user_question round after recon");
+    expect(prompt).toContain("ASSUMPTION:");
+    expect(prompt).not.toContain("an exact /goal handoff and stop");
+    expect(prompt).toContain("the runtime queues an automatic /goal start for your review");
+  });
+
+  it("clarifying-phase system guidance rule uses the bundled-round instruction (source-level pin)", async () => {
+    // The clarifying-phase guidance (clarificationQuestionRule, consumed by
+    // PHASE_GUIDANCE.clarifying) is deliberately NOT injected by before_agent_start —
+    // the handler keeps the system prompt suffix deterministic for prompt-cache
+    // stability, so the rule string is pinned at the source level, following the
+    // existing index.ts source-contract pattern used by the "No Global State File" suite.
+    const { readFile } = await import("fs/promises");
+    const src = await readFile(new URL("../index.ts", import.meta.url), "utf-8");
+    expect(src).toContain("Active Workflow: Runtime-Enforced Deep Clarification");
+    expect(src).not.toContain("Ask ONE question per message");
+    expect(src).not.toContain("Ask ONE question");
+    expect(src).toContain("Bundle up to 4 independent questions into ONE ask_user_question round after recon");
+  });
+});
+
+describe("contract critic panel roster", () => {
+  it("wires the panel roster to exactly the three M3 contract critics (source-level pin)", async () => {
+    const { readFile } = await import("fs/promises");
+    const src = await readFile(new URL("../index.ts", import.meta.url), "utf-8");
+    expect(src).toContain('["reviewer-feasibility", "reviewer-architecture", "reviewer-risk"]');
+    expect(src).toContain("goal-contract-panel");
   });
 });
 

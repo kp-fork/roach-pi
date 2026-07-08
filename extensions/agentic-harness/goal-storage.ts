@@ -60,6 +60,11 @@ function normalizeGoalStateSnapshot(snapshot: GoalStateSnapshot, path: string): 
     throw new Error(`Invalid goal state snapshot at ${path}`);
   }
 
+  const normalizedState = state as GoalState;
+  if (!Array.isArray(normalizedState.panels)) {
+    normalizedState.panels = [];
+  }
+
   return snapshot;
 }
 

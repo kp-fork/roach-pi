@@ -18,12 +18,36 @@ export interface GoalContinuationState {
   updatedAt?: string;
 }
 
+export type PanelVerdict = "APPROVE" | "REJECT";
+
+export interface PanelMemberVerdict {
+  member: string;
+  verdict: PanelVerdict;
+  findings?: string;
+  recordedAt: string;
+}
+
+export interface PanelState {
+  panelId: string;
+  purpose: string;
+  expectedMembers: string[];
+  round: number;
+  verdicts: PanelMemberVerdict[];
+}
+
+export interface GoalGates {
+  panel?: boolean;
+  validator?: boolean;
+  review?: boolean;
+}
+
 export interface GoalState {
   schemaVersion: 1;
   runId: string;
   status: GoalRunStatus;
   activeGoalId?: string;
   goals: GoalItem[];
+  panels: PanelState[];
   ledger: GoalLedgerEntry[];
   continuation: GoalContinuationState;
   createdAt: string;
@@ -44,6 +68,7 @@ export interface GoalItem {
   activeSubgoalId?: string;
   verifierReceipts: GoalVerifierReceipt[];
   blockers: string[];
+  gates?: GoalGates;
   createdAt: string;
   updatedAt: string;
 }
@@ -58,6 +83,7 @@ export interface SubgoalItem {
   evidence: string[];
   attempts: number;
   verifierReceipts: GoalVerifierReceipt[];
+  validatorReceipts?: GoalValidatorReceipt[]; // optional; absent ⇒ ungated
   blockers: string[];
   createdAt: string;
   updatedAt: string;
@@ -78,17 +104,39 @@ export interface GoalVerifierReceipt {
   rawOutput: string;
 }
 
+export const GOAL_VALIDATOR_AGENT = "plan-validator" as const;
+
+export interface GoalValidatorReceipt {
+  id: string;
+  targetType: "subgoal"; // validator gate is subgoal-only; goal-level stays verifier
+  targetId: string;
+  objectiveHash: string;
+  verdict: "PASS" | "FAIL";
+  recordedAt: string; // distinct from GoalVerifierReceipt.verifiedAt
+  validatorAgent: typeof GOAL_VALIDATOR_AGENT;
+  summary: string;
+  blockers: string[];
+  commandsRun: string[];
+  evidence: string[];
+  rawOutput: string;
+}
+
 export interface GoalLedgerEntry {
   seq: number;
   type:
     | "goal_created"
     | "goal_activated"
+    | "panel_opened"
+    | "panel_verdict_recorded"
+    | "goal_activated_gated"
     | "subgoal_created"
     | "evidence_added"
     | "completion_requested"
     | "verifier_started"
     | "verifier_pass"
     | "verifier_fail"
+    | "validator_pass"
+    | "validator_fail"
     | "continuation_queued"
     | "goal_completed"
     | "goal_paused"
@@ -113,9 +161,13 @@ export type GoalCommand =
         successCriteria?: string[];
         constraints?: string[];
         evidenceRequired?: string[];
+        gates?: GoalGates;
       };
     }
   | { type: "activate_goal"; goalId: string }
+  | { type: "open_panel"; panel: { panelId: string; purpose: string; expectedMembers: string[] } }
+  | { type: "record_panel_verdict"; panelId: string; member: string; verdict: PanelVerdict; findings?: string }
+  | { type: "activate_goal_gated"; goalId: string; panelId: string }
   | {
       type: "create_subgoal";
       subgoal: {
@@ -129,6 +181,7 @@ export type GoalCommand =
   | { type: "add_evidence"; targetType: "goal" | "subgoal"; targetId: string; evidence: string }
   | { type: "request_completion"; targetType: "goal" | "subgoal"; targetId: string }
   | { type: "record_verifier_result"; receipt: GoalVerifierReceipt }
+  | { type: "record_validator_receipt"; receipt: GoalValidatorReceipt }
   | { type: "complete_target"; targetType: "goal" | "subgoal"; targetId: string }
   | { type: "pause_goal"; goalId?: string }
   | { type: "resume_goal"; goalId?: string }
@@ -156,12 +209,22 @@ export class GoalInvariantError extends Error {
   }
 }
 
+export const REVIEW_PANEL_ID = "goal-review-panel";
+
+export function isPanelApproved(panel: PanelState): boolean {
+  if (panel.expectedMembers.length === 0) return false; // fail-closed: empty panel never approves
+  return panel.expectedMembers.every(
+    (member) => panel.verdicts.find((v) => v.member === member)?.verdict === "APPROVE",
+  );
+}
+
 export function createGoalState(runId: string, now: string): GoalState {
   return {
     schemaVersion: GOAL_STATE_SCHEMA_VERSION,
     runId,
     status: "idle",
     goals: [],
+    panels: [],
     ledger: [],
     continuation: {
       queued: false,
@@ -200,6 +263,7 @@ export function applyGoalCommand(
         subgoals: [],
         verifierReceipts: [],
         blockers: [],
+        gates: command.goal.gates ? { ...command.goal.gates } : undefined,
         createdAt: now,
         updatedAt: now,
       };
@@ -226,6 +290,84 @@ export function applyGoalCommand(
         goalId: goal.id,
         message: `Activated goal ${goal.id}`,
         createdAt: now,
+      });
+    }
+
+    case "open_panel": {
+      next.panels = next.panels ?? [];
+      const existing = next.panels.find((panel) => panel.panelId === command.panel.panelId);
+      let round: number;
+      if (existing) {
+        existing.round += 1;
+        existing.purpose = command.panel.purpose;
+        existing.expectedMembers = [...command.panel.expectedMembers];
+        existing.verdicts = [];
+        round = existing.round;
+      } else {
+        next.panels.push({
+          panelId: command.panel.panelId,
+          purpose: command.panel.purpose,
+          expectedMembers: [...command.panel.expectedMembers],
+          round: 1,
+          verdicts: [],
+        });
+        round = 1;
+      }
+      return withLedger(next, {
+        type: "panel_opened",
+        message: `Opened panel ${command.panel.panelId} (round ${round})`,
+        createdAt: now,
+        data: { panelId: command.panel.panelId, round },
+      });
+    }
+
+    case "record_panel_verdict": {
+      const panel = (next.panels ?? []).find((candidate) => candidate.panelId === command.panelId);
+      if (!panel) {
+        throw new Error(`Panel ${command.panelId} not found`);
+      }
+      const verdict: PanelMemberVerdict = {
+        member: command.member,
+        verdict: command.verdict,
+        findings: command.findings,
+        recordedAt: now,
+      };
+      const index = panel.verdicts.findIndex((candidate) => candidate.member === command.member);
+      if (index >= 0) {
+        panel.verdicts[index] = verdict;
+      } else {
+        panel.verdicts.push(verdict);
+      }
+      return withLedger(next, {
+        type: "panel_verdict_recorded",
+        message: `Panel ${command.panelId}: ${command.member} voted ${command.verdict}`,
+        createdAt: now,
+        data: { panelId: command.panelId, member: command.member, verdict: command.verdict },
+      });
+    }
+
+    case "activate_goal_gated": {
+      const goal = getGoal(next, command.goalId);
+      const panel = (next.panels ?? []).find((candidate) => candidate.panelId === command.panelId);
+      if (!panel) {
+        throw new GoalInvariantError(`Cannot activate goal ${goal.id}: panel ${command.panelId} not found`);
+      }
+      if (!isPanelApproved(panel)) {
+        throw new GoalInvariantError(`Cannot activate goal ${goal.id}: panel ${command.panelId} is not fully approved`);
+      }
+      next.goals = next.goals.map((candidate) => ({
+        ...candidate,
+        status: candidate.id === goal.id ? "active" : candidate.status === "active" ? "queued" : candidate.status,
+        updatedAt: candidate.id === goal.id ? now : candidate.updatedAt,
+      }));
+      next.status = "active";
+      next.activeGoalId = goal.id;
+      return withLedger(next, {
+        type: "goal_activated_gated",
+        goalId: goal.id,
+        message: `Activated goal ${goal.id} via panel ${command.panelId}`,
+        createdAt: now,
+        data: { panelId: command.panelId },
       });
     }
 
@@ -312,11 +454,33 @@ export function applyGoalCommand(
         target.subgoal.blockers = [...command.receipt.blockers];
         target.subgoal.updatedAt = now;
       }
+      bumpFailureBudget(next, target.goal, target.type === "goal" ? target.goal.id : target.subgoal.id, command.receipt.verdict);
       const ledgerType = command.receipt.verdict === "PASS" ? "verifier_pass" : "verifier_fail";
       return withLedger(next, {
         type: ledgerType,
         goalId: target.goal.id,
         subgoalId: target.type === "subgoal" ? target.subgoal.id : undefined,
+        message: command.receipt.summary,
+        createdAt: now,
+        data: { receiptId: command.receipt.id },
+      });
+    }
+
+    case "record_validator_receipt": {
+      const target = getTarget(next, command.receipt.targetType, command.receipt.targetId);
+      if (target.type !== "subgoal") {
+        throw new Error(`Validator receipt target ${command.receipt.targetId} is not a subgoal`);
+      }
+      target.subgoal.validatorReceipts = [...(target.subgoal.validatorReceipts ?? []), cloneValidatorReceipt(command.receipt)];
+      target.subgoal.status = command.receipt.verdict === "PASS" ? "verifying" : "blocked";
+      target.subgoal.blockers = [...command.receipt.blockers];
+      target.subgoal.updatedAt = now;
+      bumpFailureBudget(next, target.goal, target.subgoal.id, command.receipt.verdict);
+      const ledgerType = command.receipt.verdict === "PASS" ? "validator_pass" : "validator_fail";
+      return withLedger(next, {
+        type: ledgerType,
+        goalId: target.goal.id,
+        subgoalId: target.subgoal.id,
         message: command.receipt.summary,
         createdAt: now,
         data: { receiptId: command.receipt.id },
@@ -454,10 +618,17 @@ function cloneState(state: GoalState): GoalState {
         dependencies: [...subgoal.dependencies],
         evidence: [...subgoal.evidence],
         verifierReceipts: subgoal.verifierReceipts.map(cloneReceipt),
+        validatorReceipts: subgoal.validatorReceipts ? subgoal.validatorReceipts.map(cloneValidatorReceipt) : undefined,
         blockers: [...subgoal.blockers],
       })),
       verifierReceipts: goal.verifierReceipts.map(cloneReceipt),
       blockers: [...goal.blockers],
+      gates: goal.gates ? { ...goal.gates } : undefined,
+    })),
+    panels: (state.panels ?? []).map((panel) => ({
+      ...panel,
+      expectedMembers: [...panel.expectedMembers],
+      verdicts: panel.verdicts.map((v) => ({ ...v })),
     })),
     ledger: state.ledger.map((entry) => ({ ...entry, data: entry.data ? { ...entry.data } : undefined })),
     continuation: {
@@ -469,6 +640,30 @@ function cloneState(state: GoalState): GoalState {
 }
 
 function cloneReceipt(receipt: GoalVerifierReceipt): GoalVerifierReceipt {
+  return {
+    ...receipt,
+    blockers: [...receipt.blockers],
+    commandsRun: [...receipt.commandsRun],
+    evidence: [...receipt.evidence],
+  };
+}
+
+function bumpFailureBudget(
+  state: GoalState,
+  goal: GoalItem,
+  targetId: string,
+  verdict: "PASS" | "FAIL",
+): void {
+  if (goal.gates?.validator !== true) return; // fires ONLY for gated goals
+  const counters = state.continuation.consecutiveFailures; // `state` is the clone → safe to mutate
+  if (verdict === "FAIL") {
+    counters[targetId] = (counters[targetId] ?? 0) + 1;
+  } else {
+    delete counters[targetId];
+  }
+}
+
+function cloneValidatorReceipt(receipt: GoalValidatorReceipt): GoalValidatorReceipt {
   return {
     ...receipt,
     blockers: [...receipt.blockers],
@@ -539,6 +734,11 @@ export function buildGoalObjectiveHash(goal: GoalItem, subgoal?: SubgoalItem): s
 }
 
 function assertCompletionInvariant(state: GoalState, target: GoalTarget): void {
+  if (target.type === "subgoal" && target.goal.gates?.validator === true) {
+    assertValidatorCompletionInvariant(state, target.goal, target.subgoal);
+    return;
+  }
+  // ---- existing verifier invariant below: unchanged for goal targets and ungated subgoals ----
   const targetType = target.type;
   const targetId = target.type === "goal" ? target.goal.id : target.subgoal.id;
   const receipts = target.type === "goal" ? target.goal.verifierReceipts : target.subgoal.verifierReceipts;
@@ -574,6 +774,45 @@ function assertCompletionInvariant(state: GoalState, target: GoalTarget): void {
   );
   if (staleEntry) {
     throw new GoalInvariantError(`Cannot complete ${targetType} ${targetId}: verifier receipt is stale after ${staleEntry.type}`);
+  }
+
+  // ---- M6 review clause: layered ON TOP of the verifier invariant for review-gated goal targets ----
+  if (target.type === "goal" && target.goal.gates?.review === true) {
+    const reviewPanel = (state.panels ?? []).find((panel) => panel.panelId === REVIEW_PANEL_ID);
+    if (!reviewPanel || !isPanelApproved(reviewPanel)) {
+      throw new GoalInvariantError(`Cannot complete goal ${target.goal.id}: review panel is not fully approved`);
+    }
+  }
+}
+
+function assertValidatorCompletionInvariant(state: GoalState, goal: GoalItem, subgoal: SubgoalItem): void {
+  const receipts = subgoal.validatorReceipts ?? [];
+  const latest = receipts.at(-1);
+  if (!latest || latest.verdict !== "PASS") {
+    throw new GoalInvariantError(`Cannot complete subgoal ${subgoal.id}: latest validator receipt is not PASS`);
+  }
+  if (latest.targetType !== "subgoal" || latest.targetId !== subgoal.id) {
+    throw new GoalInvariantError(`Cannot complete subgoal ${subgoal.id}: validator receipt target mismatch`);
+  }
+  const expectedHash = buildGoalObjectiveHash(goal, subgoal);
+  if (latest.objectiveHash !== expectedHash) {
+    throw new GoalInvariantError(`Cannot complete subgoal ${subgoal.id}: validator receipt objective hash is stale`);
+  }
+  const passEntry = [...state.ledger].reverse().find((entry) =>
+    entry.type === "validator_pass"
+    && entry.data?.receiptId === latest.id
+    && entryMatchesTarget(entry, "subgoal", goal.id, subgoal.id)
+  );
+  if (!passEntry) {
+    throw new GoalInvariantError(`Cannot complete subgoal ${subgoal.id}: validator PASS ledger entry is missing`);
+  }
+  const staleEntry = state.ledger.find((entry) =>
+    entry.seq > passEntry.seq
+    && (entry.type === "evidence_added" || entry.type === "subgoal_created" || entry.type === "completion_requested")
+    && entryMatchesTarget(entry, "subgoal", goal.id, subgoal.id)
+  );
+  if (staleEntry) {
+    throw new GoalInvariantError(`Cannot complete subgoal ${subgoal.id}: validator receipt is stale after ${staleEntry.type}`);
   }
 }
 

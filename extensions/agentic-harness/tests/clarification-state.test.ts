@@ -138,4 +138,44 @@ describe("clarification state", () => {
     expect(canDraftGoalContract(state)).toBe(true);
     expect(getClarificationGateIssues(state)).toEqual([]);
   });
+
+  it("carries ASSUMPTION-prefixed defaults through the gate with the prefix intact", () => {
+    // Characterization: "ASSUMPTION: " is a pure value-prefix convention on the
+    // EXISTING mark_checklist_item command — no reducer change, no new command type.
+    let state = createClarificationState("run-1", "2026-05-29T00:00:00.000Z", "ship feature");
+
+    for (const id of REQUIRED_CLARIFICATION_CHECKLIST) {
+      state = applyClarificationCommand(state, {
+        type: "mark_checklist_item",
+        id,
+        value: `ASSUMPTION: ${id} default`,
+      }, { now: "2026-05-29T00:00:01.000Z" }).state;
+    }
+
+    // Assumptions do not block the gate.
+    expect(canDraftGoalContract(state)).toBe(true);
+    expect(getClarificationGateIssues(state)).toEqual([]);
+
+    // Stored values are retrievable with the prefix intact.
+    expect(state.checklist.find((item) => item.id === "objective")?.value).toBe("ASSUMPTION: objective default");
+    expect(state.checklist.every((item) => item.value?.startsWith("ASSUMPTION: "))).toBe(true);
+
+    // An all-assumptions interview can still hand off.
+    const drafted = applyClarificationCommand(state, {
+      type: "draft_goal_contract",
+      contract: {
+        objective: "Ship feature",
+        scope: ["implementation"],
+        nonGoals: ["redesign"],
+        successCriteria: ["tests pass"],
+        constraints: ["windows"],
+        evidenceRequired: ["npm test"],
+        risks: ["regression"],
+        suggestedSubgoals: ["implement"],
+        handoffCommand: "/goal",
+      },
+    }, { now: "2026-05-29T00:00:02.000Z" }).state;
+
+    expect(drafted.status).toBe("contract_drafted");
+  });
 });

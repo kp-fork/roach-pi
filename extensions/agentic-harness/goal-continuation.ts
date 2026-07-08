@@ -1,5 +1,7 @@
 import type { GoalItem, GoalState, GoalVerifierReceipt, SubgoalItem } from "./goal-state.js";
 
+export const MAX_GOAL_ATTEMPTS = 3;
+
 export interface GoalContinuationPolicyContext {
   isRootSession: boolean;
   isTeamWorker: boolean;
@@ -16,6 +18,15 @@ export type GoalContinuationDecision =
       blockers: string[];
       prompt: string;
       leaseId: string;
+    }
+  | {
+      action: "escalate";
+      reason: "failure_budget_exhausted";
+      targetType: "goal" | "subgoal";
+      targetId: string;
+      blockers: string[];
+      prompt: string;
+      leaseId: string;
     };
 
 export function planGoalContinuation(
@@ -27,6 +38,22 @@ export function planGoalContinuation(
   if (context.subagentDepth > 0) return { action: "none", reason: "subagent context" };
   if (context.isTeamWorker) return { action: "none", reason: "team worker context" };
   if (state.continuation.queued || state.continuation.leaseId) return { action: "none", reason: "continuation already queued" };
+
+  const failureTarget = findTarget(state, receipt.targetType, receipt.targetId);
+  if (
+    failureTarget?.goal.gates?.validator === true
+    && (state.continuation.consecutiveFailures[receipt.targetId] ?? 0) >= MAX_GOAL_ATTEMPTS
+  ) {
+    return {
+      action: "escalate",
+      reason: "failure_budget_exhausted",
+      targetType: receipt.targetType,
+      targetId: receipt.targetId,
+      blockers: receipt.blockers.length > 0 ? receipt.blockers : [receipt.summary],
+      prompt: buildFailureBudgetEscalationPrompt(state, receipt),
+      leaseId: buildContinuationLeaseId(state, receipt, "escalate"),
+    };
+  }
 
   if (receipt.verdict === "FAIL") {
     return {
@@ -59,6 +86,22 @@ export function buildVerifierFailureContinuationPrompt(state: GoalState, receipt
   const evidenceRequired = target?.goal.evidenceRequired ?? [];
   const blockers = receipt.blockers.length > 0 ? receipt.blockers : [receipt.summary];
 
+  if (target?.goal.gates?.validator === true) {
+    return [
+      `The reviewer-verifier failed ${receipt.targetType} ${receipt.targetId}.`,
+      "",
+      "The runtime is implementing subgoals via the isolated worker→validator loop; the blockers below will be routed into fix subgoals or retried by that loop.",
+      "",
+      "Objective:",
+      objective,
+      "",
+      "Blockers:",
+      formatList(blockers),
+      "",
+      "Run /goal (no arguments) to advance the durable runtime. Do not implement or verify anything yourself.",
+    ].join("\n");
+  }
+
   return [
     `The reviewer-verifier failed ${receipt.targetType} ${receipt.targetId}.`,
     "",
@@ -72,6 +115,23 @@ export function buildVerifierFailureContinuationPrompt(state: GoalState, receipt
     formatList(evidenceRequired),
     "",
     "Continue working on the blockers above. Do not claim complete or request completion again until the blockers are fixed and evidence has been added to the goal ledger.",
+  ].join("\n");
+}
+
+export function buildFailureBudgetEscalationPrompt(state: GoalState, receipt: GoalVerifierReceipt): string {
+  const target = findTarget(state, receipt.targetType, receipt.targetId);
+  const objective = target?.targetType === "subgoal" ? target.subgoal.objective : target?.goal.objective ?? receipt.targetId;
+  const blockers = receipt.blockers.length > 0 ? receipt.blockers : [receipt.summary];
+
+  return [
+    `The durable goal exhausted its ${MAX_GOAL_ATTEMPTS}-attempt failure budget. Stop the automatic runtime and summarize the unresolved blockers for the user:`,
+    "",
+    `Target: ${receipt.targetType} ${receipt.targetId}`,
+    "Objective:",
+    objective,
+    "",
+    "Unresolved blockers:",
+    formatList(blockers),
   ].join("\n");
 }
 
@@ -152,7 +212,7 @@ function subgoalTarget(goal: GoalItem, subgoal: SubgoalItem): GoalContinuationTa
   };
 }
 
-function buildContinuationLeaseId(state: GoalState, receipt: GoalVerifierReceipt, reason: "fail" | "next"): string {
+function buildContinuationLeaseId(state: GoalState, receipt: GoalVerifierReceipt, reason: "fail" | "next" | "escalate"): string {
   return `${state.runId}:${receipt.targetType}:${receipt.targetId}:${receipt.id}:${reason}`;
 }
 

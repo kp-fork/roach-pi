@@ -181,3 +181,95 @@ describe("loadAgentsFromDir", () => {
     expect(names).not.toContain("reviewer-user-value");
   });
 });
+
+describe("M3 binary reviewer roster and verdict grammar pins", () => {
+  const bundledDir = fileURLToPath(new URL("../agents/", import.meta.url));
+  const CONTRACT_CRITICS = ["reviewer-feasibility", "reviewer-architecture", "reviewer-risk"];
+  const GOAL_COMPLETION_REVIEWERS = ["security-reviewer", "qa-reviewer"];
+  const ALL_REVIEWERS = [...CONTRACT_CRITICS, ...GOAL_COMPLETION_REVIEWERS];
+
+  async function loadPrompts(): Promise<Map<string, string>> {
+    const agents = await loadAgentsFromDir(bundledDir, "bundled");
+    return new Map(agents.map((agent) => [agent.name, agent.systemPrompt]));
+  }
+
+  it("pins the roster: contract critics + goal-completion reviewers present, retired and glm source names absent", async () => {
+    const prompts = await loadPrompts();
+    const names = [...prompts.keys()];
+
+    for (const name of ALL_REVIEWERS) {
+      expect(names, `roster must contain ${name}`).toContain(name);
+    }
+    for (const absent of [
+      "synthesis",
+      "reviewer-dependency",
+      "reviewer-user-value",
+      "implementation-critic",
+      "feasibility-critic",
+      "integration-critic",
+      "coverage-critic",
+    ]) {
+      expect(names, `roster must not contain ${absent}`).not.toContain(absent);
+    }
+  });
+
+  it("every reviewer body carries the literal 'unchecked is NO' rule", async () => {
+    const prompts = await loadPrompts();
+    for (const name of ALL_REVIEWERS) {
+      const prompt = prompts.get(name);
+      expect(prompt, `bundled agent ${name} must exist`).toBeDefined();
+      expect(prompt, `${name} must contain "unchecked is NO"`).toContain("unchecked is NO");
+    }
+  });
+
+  it("contract critics carry the mechanical APPROVE/REJECT verdict rule and VERDICT line spec", async () => {
+    const prompts = await loadPrompts();
+    for (const name of CONTRACT_CRITICS) {
+      const prompt = prompts.get(name);
+      expect(prompt, `bundled agent ${name} must exist`).toBeDefined();
+      expect(prompt, `${name} mechanical rule`).toContain("APPROVE iff every check is YES or N/A");
+      expect(prompt, `${name} VERDICT line spec`).toContain("VERDICT: APPROVE | REJECT");
+    }
+  });
+
+  it("contract critics carry the ASSUMPTION: recognition rule", async () => {
+    const prompts = await loadPrompts();
+    for (const name of CONTRACT_CRITICS) {
+      const prompt = prompts.get(name);
+      expect(prompt, `bundled agent ${name} must exist`).toBeDefined();
+      expect(prompt, `${name} ASSUMPTION token`).toContain("ASSUMPTION:");
+      expect(prompt, `${name} recognition phrase`).toContain("not an invented decision");
+    }
+  });
+
+  it("contract critics contain no graded verdict scales", async () => {
+    const prompts = await loadPrompts();
+    for (const name of CONTRACT_CRITICS) {
+      const prompt = prompts.get(name);
+      expect(prompt, `bundled agent ${name} must exist`).toBeDefined();
+      expect(prompt, `${name} must not contain "Effort:"`).not.toContain("Effort:");
+      expect(prompt, `${name} must not contain "Feasibility risk:"`).not.toContain("Feasibility risk:");
+      expect(prompt, `${name} must not contain "Interface risks:"`).not.toContain("Interface risks:");
+    }
+  });
+
+  it("security-reviewer and qa-reviewer carry the mechanical PASS/FAIL verdict rule and VERDICT line spec", async () => {
+    const prompts = await loadPrompts();
+    for (const name of GOAL_COMPLETION_REVIEWERS) {
+      const prompt = prompts.get(name);
+      expect(prompt, `bundled agent ${name} must exist`).toBeDefined();
+      expect(prompt, `${name} mechanical rule`).toContain("PASS iff every check is YES or N/A");
+      expect(prompt, `${name} VERDICT line spec`).toContain("VERDICT: PASS | FAIL");
+    }
+  });
+
+  it("qa-reviewer carries the folded implementation-critic fraud checks", async () => {
+    const prompts = await loadPrompts();
+    const prompt = prompts.get("qa-reviewer");
+    expect(prompt, "bundled agent qa-reviewer must exist").toBeDefined();
+    expect(prompt).toContain("genuine body");
+    expect(prompt).toContain("criteria-shaped hardcoding");
+    expect(prompt).toContain("actually fail");
+    expect(prompt).toContain("swallowed failure");
+  });
+});

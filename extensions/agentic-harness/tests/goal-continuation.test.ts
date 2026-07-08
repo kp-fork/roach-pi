@@ -45,7 +45,8 @@ import { applyGoalCommand, createGoalState, type GoalItem, type GoalVerifierRece
 import { defaultGoalStateRoot } from "../goal-storage.js";
 import { applyAndPersistGoalCommand, loadGoalState } from "../goal-state-service.js";
 import { buildGoalVerifierReceipt, getGoalVerifierTarget, parseGoalVerifierOutput } from "../goal-verifier.js";
-import { planGoalContinuation } from "../goal-continuation.js";
+import { buildNextTargetContinuationPrompt, buildVerifierFailureContinuationPrompt, planGoalContinuation } from "../goal-continuation.js";
+import { buildSubgoalValidatorReceipt, parseSubgoalValidatorOutput } from "../subgoal-validator.js";
 import { runAgent } from "../subagent.js";
 
 const START = "2026-05-28T00:00:00.000Z";
@@ -149,23 +150,60 @@ describe("goal continuation", () => {
     expect(planGoalContinuation(state, receipt, { ...rootContext(), subagentDepth: 1 })).toEqual({ action: "none", reason: "subagent context" });
   });
 
-  it("keeps retrying after repeated failures without a max failure budget", () => {
-    let state = stateWithGoal();
-    let latestReceipt!: GoalVerifierReceipt;
-    for (let index = 1; index <= 5; index += 1) {
-      latestReceipt = failReceipt(state.goals[0], `receipt-${index}`);
+  it("halts with a blocker-summary escalation after the 3-strike failure budget (validator path)", () => {
+    let state = stateWithGatedGoal();
+    for (let index = 1; index <= 3; index += 1) {
+      const parsed = parseSubgoalValidatorOutput(`Verdict: FAIL\nSummary: attempt ${index} failed\nBlockers:\n- finding-${index}`);
+      const validatorReceipt = buildSubgoalValidatorReceipt(state.goals[0], state.goals[0].subgoals[0], parsed, {
+        id: `validator-${index}`,
+        recordedAt: `2026-05-28T00:0${index}:00.000Z`,
+      });
       state = applyGoalCommand(state, {
-        type: "record_verifier_result",
-        receipt: latestReceipt,
+        type: "record_validator_receipt",
+        receipt: validatorReceipt,
       }, { now: `2026-05-28T00:0${index}:00.000Z` }).state;
     }
+    expect(state.continuation.consecutiveFailures["subgoal-1"]).toBe(3);
 
-    expect(planGoalContinuation(state, latestReceipt, rootContext())).toMatchObject({
-      action: "follow_up",
-      reason: "verifier_fail",
+    const target = getGoalVerifierTarget(state, "subgoal", "subgoal-1");
+    const receipt = buildGoalVerifierReceipt(target, parseGoalVerifierOutput("Verdict: FAIL\nSummary: still failing\nBlockers:\n- finding-3"), {
+      id: "receipt-strike",
+      verifiedAt: "2026-05-28T00:04:00.000Z",
+    });
+
+    const decision = planGoalContinuation(state, receipt, rootContext());
+    expect(decision).toMatchObject({
+      action: "escalate",
+      reason: "failure_budget_exhausted",
+      targetType: "subgoal",
+      targetId: "subgoal-1",
+    });
+    const prompt = decision.action === "escalate" ? decision.prompt : "";
+    expect(prompt).toContain("The durable goal exhausted its 3-attempt failure budget. Stop the automatic runtime and summarize the unresolved blockers for the user:");
+    expect(prompt).toContain("finding-3");
+  });
+
+  it("keeps ungated verifier-fail and next-target prompts byte-identical (golden)", () => {
+    const { state, receipt } = stateWithFailReceipt();
+    const failPrompt = buildVerifierFailureContinuationPrompt(state, receipt);
+    expect(failPrompt).toContain("Continue working on the blockers");
+    expect(failPrompt).toContain("Do not claim complete");
+    expect(failPrompt).not.toContain("The runtime is implementing subgoals");
+
+    const nextPrompt = buildNextTargetContinuationPrompt(receipt, {
+      targetType: "subgoal",
+      targetId: "subgoal-2",
+      objective: "Second target",
+      evidenceRequired: ["Tests pass"],
+    });
+    expect(nextPrompt).toContain("Next subgoal: subgoal-2");
+    const goalNextPrompt = buildNextTargetContinuationPrompt(receipt, {
       targetType: "goal",
       targetId: "goal-1",
+      objective: "Ship continuation loop",
+      evidenceRequired: ["Tests pass"],
     });
+    expect(goalNextPrompt).toContain("Next goal: goal-1");
   });
 });
 
@@ -244,6 +282,26 @@ function stateWithGoal() {
       evidenceRequired: ["Tests pass"],
     },
   }, { now: START }).state;
+}
+
+function stateWithGatedGoal() {
+  let state = applyGoalCommand(createGoalState("run-1", START), {
+    type: "create_goal",
+    goal: {
+      id: "goal-1",
+      title: "Goal 1",
+      objective: "Ship continuation loop",
+      successCriteria: ["Continuation works"],
+      evidenceRequired: ["Tests pass"],
+      gates: { validator: true },
+    },
+  }, { now: START }).state;
+  state = applyGoalCommand(state, { type: "activate_goal", goalId: "goal-1" }, { now: START }).state;
+  state = applyGoalCommand(state, {
+    type: "create_subgoal",
+    subgoal: { id: "subgoal-1", goalId: "goal-1", title: "First target", objective: "First target" },
+  }, { now: START }).state;
+  return state;
 }
 
 function stateWithFailReceipt() {
