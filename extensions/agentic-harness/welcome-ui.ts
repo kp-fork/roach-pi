@@ -13,6 +13,23 @@ export type HeaderUi = {
 
 let welcomeVisible = true;
 
+// Once the conversation starts, the banner ends up above the visible viewport.
+// pi-tui cannot differentially render changes above the viewport, so every
+// animated shimmer frame would force fullRender(true) — which clears the
+// terminal scrollback (\x1b[3J) ~30x/sec and makes scrolling up impossible.
+// Freezing renders the static banner instead.
+let shimmerFrozen = false;
+let activeHeader: WelcomeHeaderComponent | null = null;
+
+export function freezeWelcomeShimmer(): void {
+  shimmerFrozen = true;
+  activeHeader?.freeze();
+}
+
+export function unfreezeWelcomeShimmer(): void {
+  shimmerFrozen = false;
+}
+
 const BANNER_LINES = [
   "██████╗  ██████╗  █████╗  ██████╗██╗  ██╗    ██████╗ ██╗",
   "██╔══██╗██╔═══██╗██╔══██╗██╔════╝██║  ██║    ██╔══██╗██║",
@@ -96,7 +113,8 @@ class WelcomeHeaderComponent implements Component {
   private readonly startedAt = Date.now();
 
   constructor(private readonly tui: Pick<TUI, "requestRender">, private readonly theme: WelcomeTheme) {
-    this.animating = canRenderShimmer(theme);
+    activeHeader = this;
+    this.animating = canRenderShimmer(theme) && !shimmerFrozen;
     if (this.animating) {
       // Frame interval controls SMOOTHNESS only. The sweep speed is set by
       // SHIMMER_SWEEP_MS and is time-based (phase = Date.now()-startedAt), so
@@ -112,6 +130,14 @@ class WelcomeHeaderComponent implements Component {
   dispose(): void {
     this.stopTimer();
     this.animating = false;
+    if (activeHeader === this) activeHeader = null;
+  }
+
+  freeze(): void {
+    if (!this.animating) return;
+    this.animating = false;
+    this.stopTimer();
+    this.tui.requestRender(); // paint the static banner once
   }
 
   invalidate(): void {}
@@ -121,7 +147,23 @@ class WelcomeHeaderComponent implements Component {
   }
 
   private tick(): void {
+    if (this.isBannerAboveViewport()) {
+      // Animating lines above the viewport forces pi-tui into scrollback-
+      // clearing full redraws every frame; freeze permanently instead.
+      this.freeze();
+      return;
+    }
     this.tui.requestRender();
+  }
+
+  private isBannerAboveViewport(): boolean {
+    // Best-effort peek at pi-tui internals; when unavailable, the
+    // conversation-start freeze hooks in index.ts remain the safety net.
+    const tui = this.tui as { previousLines?: unknown; terminal?: { rows?: unknown } };
+    const contentLines = Array.isArray(tui.previousLines) ? tui.previousLines.length : null;
+    const rows = typeof tui.terminal?.rows === "number" ? tui.terminal.rows : null;
+    if (contentLines === null || rows === null || rows <= 0) return false;
+    return contentLines > rows;
   }
 
   private stopTimer(): void {

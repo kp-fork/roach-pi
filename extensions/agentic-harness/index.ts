@@ -4,7 +4,7 @@ import { Type, type TUnsafe } from "@sinclair/typebox";
 import { RoachFooter, type CacheStats, type ActiveTools, type ActiveToolStatus } from "./footer.js";
 import { resolveAgenticUiSettings } from "./ui-settings.js";
 import { shimmerText, type ShimmerPalette } from "./shimmer.js";
-import { registerWelcomeCommand, showWelcomeHeader } from "./welcome-ui.js";
+import { freezeWelcomeShimmer, registerWelcomeCommand, showWelcomeHeader, unfreezeWelcomeShimmer } from "./welcome-ui.js";
 import { registerEditorStashCommands } from "./editor-stash.js";
 import { installEditorComposition } from "./editor-composition.js";
 import { homedir } from "os";
@@ -1281,6 +1281,9 @@ Do not start multi-step implementation without a clear understanding of what the
   ].join("\n");
 
   pi.on("before_agent_start", async (event, ctx) => {
+    // Conversation content will push the welcome banner above the viewport;
+    // an animated banner up there forces scrollback-clearing full redraws.
+    freezeWelcomeShimmer();
     workingMessageBase = currentWorkingBaseMessage(activeTools);
     startWorkingMessageShimmer(ctx);
 
@@ -2842,6 +2845,17 @@ Do not start multi-step implementation without a clear understanding of what the
       structuredRestore = { rootDir, state: reconstructedState };
     }
 
+    // Restored sessions already have conversation above the banner, so the
+    // shimmer must stay frozen. A fresh session (no conversation entries yet —
+    // fresh branches still carry session/custom bookkeeping entries) can
+    // animate; the component self-freezes if content outgrows the viewport.
+    const conversationEntryTypes = new Set(["message", "custom_message", "compaction", "branch_summary"]);
+    const hasConversationHistory = branchEntries.some((entry) =>
+      typeof entry === "object" && entry !== null
+      && conversationEntryTypes.has((entry as { type?: string }).type ?? "")
+    );
+    if (hasConversationHistory) freezeWelcomeShimmer();
+    else unfreezeWelcomeShimmer();
     showWelcomeHeader(ctx.ui);
 
     const uiSettings = resolveAgenticUiSettings({ cwd: ctx.cwd });

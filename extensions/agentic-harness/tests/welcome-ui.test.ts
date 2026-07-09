@@ -9,10 +9,12 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
 import {
   createWelcomeHeader,
   dismissWelcomeHeader,
+  freezeWelcomeShimmer,
   isWelcomeVisible,
   registerWelcomeCommand,
   showWelcomeHeader,
   toggleWelcomeHeader,
+  unfreezeWelcomeShimmer,
 } from "../welcome-ui.js";
 import { SHIMMER_SWEEP_MS } from "../shimmer.js";
 
@@ -40,6 +42,7 @@ function render(component: { render(width: number): string[] }): string {
 }
 
 afterEach(() => {
+  unfreezeWelcomeShimmer();
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -86,6 +89,79 @@ describe("welcome header controller", () => {
 
     expect(clearIntervalSpy).toHaveBeenCalledTimes(1);
     expect(requestRender).not.toHaveBeenCalled();
+  });
+
+  it("freezes the shimmer to a static banner once the conversation starts", () => {
+    // Regression guard: once conversation content grows past one screen, the
+    // banner lives above the viewport. Every animated shimmer frame then forces
+    // pi-tui into fullRender(true), which clears the terminal scrollback
+    // (\x1b[3J) ~30x/sec and makes scrolling up impossible.
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const requestRender = vi.fn();
+    const component = createWelcomeHeader()({ requestRender } as any, shimmerTheme);
+
+    freezeWelcomeShimmer();
+
+    const frozenRender = render(component);
+    expect(frozenRender).not.toContain("\x1b[38;2;"); // static banner, no truecolor shimmer
+    requestRender.mockClear();
+
+    vi.advanceTimersByTime(330); // 10 shimmer frames
+    expect(requestRender).not.toHaveBeenCalled();
+
+    vi.setSystemTime(SHIMMER_SWEEP_MS / 2);
+    expect(render(component)).toBe(frozenRender); // time-invariant after freeze
+  });
+
+  it("creates static headers while frozen (e.g., /welcome on after chatting)", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    freezeWelcomeShimmer();
+
+    const requestRender = vi.fn();
+    const component = createWelcomeHeader()({ requestRender } as any, shimmerTheme);
+
+    expect(render(component)).not.toContain("\x1b[38;2;");
+    vi.advanceTimersByTime(330);
+    expect(requestRender).not.toHaveBeenCalled();
+  });
+
+  it("self-freezes when content grows taller than the viewport", () => {
+    // Even before any conversation, pi's startup context dump can push the
+    // banner above the viewport (e.g., 100 content lines on a 28-row screen).
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const requestRender = vi.fn();
+    const tui = {
+      requestRender,
+      previousLines: new Array(100).fill(""),
+      terminal: { rows: 28 },
+    };
+    const component = createWelcomeHeader()(tui as any, shimmerTheme);
+
+    vi.advanceTimersByTime(40); // first tick detects banner above viewport
+    const callsAfterFreeze = requestRender.mock.calls.length; // freeze paints static once
+    vi.advanceTimersByTime(330);
+    expect(requestRender.mock.calls.length).toBe(callsAfterFreeze); // no further ticks
+
+    expect(render(component)).not.toContain("\x1b[38;2;"); // static banner
+  });
+
+  it("keeps animating while all content fits in the viewport", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const requestRender = vi.fn();
+    const tui = {
+      requestRender,
+      previousLines: new Array(20).fill(""),
+      terminal: { rows: 28 },
+    };
+    const component = createWelcomeHeader()(tui as any, shimmerTheme);
+
+    vi.advanceTimersByTime(100);
+    expect(requestRender).toHaveBeenCalled();
+    expect(render(component)).toContain("\x1b[38;2;");
   });
 
   it("shows, dismisses, and toggles the header", () => {
