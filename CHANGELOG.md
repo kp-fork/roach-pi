@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.40.1](https://github.com/tmdgusya/roach-pi/compare/v1.40.0...v1.40.1) (2026-07-09)
+
+### Bug Fixes
+
+* **agentic-harness:** freeze welcome shimmer before it forces scrollback-clearing redraws ([765235a](https://github.com/tmdgusya/roach-pi/commit/765235a09533a84b33af22a784cdfe9898700199))
+
+### Miscellaneous
+
+* sync package-lock version metadata ([ad79ed8](https://github.com/tmdgusya/roach-pi/commit/ad79ed89c4d050a2bbaa1b44e141fb92bd76825d))
+
 ## [1.40.0](https://github.com/tmdgusya/roach-pi/compare/v1.39.0...v1.40.0) (2026-07-08)
 
 ### Features
